@@ -1,0 +1,37 @@
+{
+  "name": "@synq/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write ."
+  },
+  "dependencies": {
+    "next": "^14.2.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zustand": "^4.5.0",
+    "clsx": "^2.1.1",
+    "tailwind-merge": "^2.5.4",
+    "class-variance-authority": "^0.7.1",
+    "lucide-react": "^0.468.0",
+    "@radix-ui/react-slot": "^1.1.1",
+    "@synq/shared-types": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^8",
+    "eslint-config-next": "^14.2.0",
+    "postcss": "^8.4.47",
+    "prettier": "^3.3.3",
+    "tailwindcss": "^3.4.14",
+    "typescript": "^5.6.0"
+  }
+}

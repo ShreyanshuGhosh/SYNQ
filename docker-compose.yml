@@ -1,0 +1,71 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-synq}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-synq_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-synq_dev}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-synq}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Two Redis instances: cache (6379) and queue (6380).
+  # Kept separate so task backlog never evicts cached context.
+  redis_cache:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - redis_cache_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis_queue:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6380:6379"
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - redis_queue_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Web console
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-synq_minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-synq_minio_password}
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+volumes:
+  postgres_data:
+  redis_cache_data:
+  redis_queue_data:
+  minio_data:
