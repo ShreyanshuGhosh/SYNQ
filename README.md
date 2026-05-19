@@ -2,7 +2,7 @@
 
 Cross-agent conversation continuity SaaS. Users continue conversations across AI providers (Claude, GPT, Gemini) when they hit rate limits, want to switch models, or need different capabilities.
 
-**Current status: Pre-Phase 1 — skeleton only. No features implemented.**
+**Current status: Phase 1 (Foundation) — Clerk auth, Postgres schema, conversation REST API, LiteLLM streaming (Gemini 2.5 Flash for free-tier dev; swap to Anthropic once funded), Next.js chat UI with Zustand + SSE.**
 
 ---
 
@@ -74,7 +74,33 @@ uv sync       # creates .venv, installs runtime + dev deps
 cd ../..
 ```
 
-### 5 — (Optional) Set up pre-commit hooks
+### 5 — Apply database migrations
+
+```bash
+cd apps/api
+uv run alembic upgrade head
+cd ../..
+```
+
+### 6 — Configure Clerk and Gemini
+
+Fill in `apps/web/.env.local` and `apps/api/.env`:
+
+- **Clerk** — create an application at https://dashboard.clerk.com, then copy
+  the publishable + secret keys to `apps/web/.env.local`, and the JWKS URL +
+  Frontend API URL to `apps/api/.env` (`CLERK_JWKS_URL`, `CLERK_ISSUER`).
+- **Clerk webhook (optional locally)** — create an endpoint pointed at
+  `http(s)://<your-api-host>/webhooks/clerk` listening for `user.created`
+  and `user.deleted`, then paste the Signing Secret into
+  `CLERK_WEBHOOK_SECRET`. The auth dependency also lazy-creates user rows on
+  first request, so you can defer this until you deploy.
+- **Gemini** — grab a free-tier key at https://aistudio.google.com/apikey
+  and paste it into `GEMINI_API_KEY` in `apps/api/.env`. `DEFAULT_MODEL`
+  defaults to `gemini-2.5-flash`; flip to a Claude model once you have
+  Anthropic credits (Phase 2 wires the model picker so per-message
+  overrides work too).
+
+### 7 — (Optional) Set up pre-commit hooks
 
 ```bash
 pre-commit install
@@ -95,6 +121,40 @@ uv run uvicorn app.main:app --reload --port 8000
 ```bash
 npm run dev:web
 # → http://localhost:3000
+```
+
+### Smoke-testing Phase 1 end-to-end
+
+1. Bring up infra: `docker compose up -d`
+2. Apply migrations: `cd apps/api && uv run alembic upgrade head`
+3. Start the API: `uv run uvicorn app.main:app --reload --port 8000`
+4. Start the web app (separate terminal, from repo root): `npm run dev:web`
+5. Open http://localhost:3000, click **Sign up**, complete Clerk onboarding.
+6. You'll be redirected to `/chat`. Click **+ New chat**, type a message, hit
+   **Send**. Tokens should stream into the assistant bubble.
+7. Refresh the page — history must reload from Postgres.
+
+Verifying canonical storage:
+
+```bash
+docker compose exec postgres psql -U synq -d synq_dev -c \
+  "SELECT id, role, content, model_used, token_counts FROM messages ORDER BY created_at DESC LIMIT 4;"
+```
+
+Expectations:
+- `content` is a JSONB array of `{"type":"text","text":"..."}` blocks (never a plain string).
+- `model_used` is the exact pinned model id (e.g. `gemini-2.5-flash`).
+- `token_counts` is `{"gemini": <int>}`.
+- `conversations.version` increments after each assistant reply.
+
+Idempotency check (curl, replace `<JWT>` with a Clerk session token):
+
+```bash
+# Same idempotency_key twice → second call replays the original, no new turn.
+curl -N -X POST http://localhost:8000/conversations/<conv-id>/messages \
+  -H "Authorization: Bearer <JWT>" \
+  -H "Content-Type: application/json" \
+  -d '{"content":[{"type":"text","text":"hi"}],"idempotency_key":"abc-123"}'
 ```
 
 ---

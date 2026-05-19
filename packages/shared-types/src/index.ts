@@ -1,7 +1,17 @@
 /**
  * Canonical data model types — provider-agnostic.
- * These mirror the Pydantic models in apps/api/app/ and are the source
- * of truth for what flows over the REST API.
+ * These mirror the Pydantic models in apps/api/app/models.py and are the
+ * source of truth for what flows over the REST API.
+ *
+ * Class/interface names match the SQL table names one-to-one:
+ *   Conversation ↔ conversations
+ *   Message      ↔ messages
+ *   File         ↔ files
+ *   AuditLog     ↔ audit_log
+ *   User         ↔ users
+ *
+ * Kept in sync manually with apps/api/app/models.py. Phase 6 will replace
+ * this with auto-generation.
  */
 
 export type UUID = string;
@@ -21,7 +31,7 @@ export interface ImageBlock {
 export interface FileRefBlock {
   type: "file_ref";
   file_id: UUID;
-  selection?: string; // e.g. "pages 3-7"
+  selection?: string | null;
 }
 
 export interface ToolUseBlock {
@@ -50,9 +60,15 @@ export type ContentBlock =
 export type MessageRole = "user" | "assistant" | "system";
 export type EmbeddingStatus = "pending" | "done" | "failed";
 export type ParseStatus = "pending" | "done" | "failed";
-export type MessageStatus = "complete" | "interrupted" | "pending";
 
 // ── Core entities ─────────────────────────────────────────────────────────
+
+export interface User {
+  id: UUID;
+  clerk_id: string;
+  email: string | null;
+  created_at: string;
+}
 
 export interface Conversation {
   id: UUID;
@@ -63,7 +79,7 @@ export interface Conversation {
   summary_through_turn: number;
   extracted_facts: Record<string, unknown>;
   current_model: string | null;
-  version: number; // optimistic concurrency
+  version: number;
   created_at: string;
   updated_at: string;
   archived_at: string | null;
@@ -76,10 +92,13 @@ export interface Message {
   role: MessageRole;
   content: ContentBlock[];
   model_used: string | null;
-  token_counts: Record<string, number> | null; // keyed by provider id
-  cost_usd: number | null;
+  /**
+   * JSONB map keyed by provider id. Example: { "gemini": 142 }.
+   * Never a single number — switch decisions are O(1) lookups by provider.
+   */
+  token_counts: Record<string, number> | null;
+  cost_usd: string | null; // Decimal serialized as string
   embedding_status: EmbeddingStatus;
-  status: MessageStatus;
   idempotency_key: string | null;
   created_at: string;
 }
@@ -97,10 +116,20 @@ export interface File {
   created_at: string;
 }
 
+export interface AuditLog {
+  id: number;
+  user_id: UUID | null;
+  action: string;
+  resource_type: string | null;
+  resource_id: UUID | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+}
+
 // ── API shapes ────────────────────────────────────────────────────────────
 
 export interface CreateConversationRequest {
-  title?: string;
+  title?: string | null;
 }
 
 export interface CreateConversationResponse {
@@ -112,6 +141,25 @@ export interface ListConversationsResponse {
   total: number;
 }
 
+export interface GetConversationResponse {
+  conversation: Conversation;
+  messages: Message[];
+}
+
+export interface SendMessageRequest {
+  content: ContentBlock[];
+  model?: string | null;
+  idempotency_key?: string | null;
+}
+
 export interface HealthResponse {
   status: "ok";
 }
+
+// ── SSE event payloads (server → client) ──────────────────────────────────
+
+export type ChatStreamEvent =
+  | { event: "user_message"; data: Message }
+  | { event: "token"; data: { text: string } }
+  | { event: "done"; data: Message }
+  | { event: "error"; data: { message: string } };

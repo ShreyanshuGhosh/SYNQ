@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
+from app.routers import conversations, webhooks
 
 app = FastAPI(
     title="SYNQ API",
@@ -16,6 +17,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(conversations.router)
+app.include_router(webhooks.router)
 
 
 @app.get("/health")

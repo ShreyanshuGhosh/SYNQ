@@ -15,5 +15,33 @@ class Settings(BaseSettings):
     environment: str = "development"
     cors_origins: list[str] = ["http://localhost:3000"]
 
+    # Clerk
+    clerk_jwks_url: str = ""  # e.g. https://your-clerk-instance.clerk.accounts.dev/.well-known/jwks.json
+    clerk_issuer: str = ""  # e.g. https://your-clerk-instance.clerk.accounts.dev
+    clerk_webhook_secret: str = ""  # whsec_... from Clerk dashboard
+
+    # Gemini / LiteLLM
+    gemini_api_key: str = ""
+    default_model: str = "gemini-2.5-flash"
+
+    # Rate limiting
+    rate_limit_per_minute: int = 60
+
+    @property
+    def sync_database_url(self) -> str:
+        """psycopg URL for Alembic migrations (sync driver)."""
+        return self.database_url.replace("postgresql+asyncpg://", "postgresql+psycopg://").replace(
+            "postgresql://", "postgresql+psycopg://"
+        )
+
+    @property
+    def async_database_url(self) -> str:
+        """asyncpg URL for application runtime."""
+        if "+asyncpg" in self.database_url:
+            return self.database_url
+        return self.database_url.replace("postgresql+psycopg://", "postgresql+asyncpg://").replace(
+            "postgresql://", "postgresql+asyncpg://"
+        )
+
 
 settings = Settings()
