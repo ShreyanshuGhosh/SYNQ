@@ -1,11 +1,15 @@
 import type {
+  ContentBlock,
+  ContextWarningEvent,
   Conversation,
   CreateConversationResponse,
   GetConversationResponse,
   ListConversationsResponse,
   Message,
+  ModelListResponse,
+  ModelSwitchEvent,
   SendMessageRequest,
-  ContentBlock,
+  UpdateConversationRequest,
 } from "@synq/shared-types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -66,8 +70,35 @@ export async function getConversation(
 export type ChatEvent =
   | { event: "user_message"; data: Message }
   | { event: "token"; data: { text: string } }
+  | { event: "model_switch"; data: ModelSwitchEvent }
+  | { event: "context_warning"; data: ContextWarningEvent }
   | { event: "done"; data: Message }
   | { event: "error"; data: { message: string } };
+
+export async function listModels(
+  getToken: GetToken,
+): Promise<ModelListResponse> {
+  const res = await fetch(`${API_BASE}/models`, {
+    headers: await authHeaders(getToken),
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`listModels: ${res.status}`);
+  return res.json();
+}
+
+export async function updateConversation(
+  getToken: GetToken,
+  id: string,
+  patch: UpdateConversationRequest,
+): Promise<Conversation> {
+  const res = await fetch(`${API_BASE}/conversations/${id}`, {
+    method: "PATCH",
+    headers: await authHeaders(getToken),
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) throw new Error(`updateConversation: ${res.status}`);
+  return res.json();
+}
 
 export async function* sendMessageStream(
   getToken: GetToken,
@@ -103,7 +134,11 @@ export async function* sendMessageStream(
     while (true) {
       const { value, done } = await reader.read();
       if (done) break;
-      buffer += decoder.decode(value, { stream: true });
+      // Normalize CRLF (sse-starlette's default) to LF so a single
+      // \n\n split catches both line-ending styles. Without this, the
+      // browser buffers the entire stream and only flushes when the
+      // connection closes — looks like "no response until refresh".
+      buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
 
       let separatorIndex = buffer.indexOf("\n\n");
       while (separatorIndex !== -1) {
@@ -123,6 +158,9 @@ function parseSSEBlock(block: string): ChatEvent | null {
   let event = "message";
   const dataLines: string[] = [];
   for (const line of block.split("\n")) {
+    // SSE per spec: comments start with ":" — used as heartbeats by
+    // sse-starlette. Skip them silently.
+    if (!line || line.startsWith(":")) continue;
     if (line.startsWith("event:")) event = line.slice(6).trim();
     else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
   }

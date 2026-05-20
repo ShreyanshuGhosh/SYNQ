@@ -152,14 +152,42 @@ export interface SendMessageRequest {
   idempotency_key?: string | null;
 }
 
+export interface UpdateConversationRequest {
+  current_model?: string | null;
+  title?: string | null;
+}
+
+export interface ModelInfo {
+  id: string;
+  provider: string;
+}
+
+export interface ModelListResponse {
+  models: ModelInfo[];
+  default: string;
+}
+
 export interface HealthResponse {
   status: "ok";
 }
 
 // ── SSE event payloads (server → client) ──────────────────────────────────
 
+export interface ModelSwitchEvent {
+  model: string;
+  provider: string;
+  note: string;
+}
+
+export interface ContextWarningEvent {
+  dropped: number;
+  message: string;
+}
+
 export type ChatStreamEvent =
   | { event: "user_message"; data: Message }
   | { event: "token"; data: { text: string } }
+  | { event: "model_switch"; data: ModelSwitchEvent }
+  | { event: "context_warning"; data: ContextWarningEvent }
   | { event: "done"; data: Message }
   | { event: "error"; data: { message: string } };

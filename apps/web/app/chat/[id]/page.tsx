@@ -13,6 +13,7 @@ export default function ChatThreadPage() {
   const { getToken, isSignedIn } = useAuth();
   const setCurrent = useChatStore((s) => s.setCurrentConversation);
   const setMessages = useChatStore((s) => s.setMessages);
+  const setCurrentModel = useChatStore((s) => s.setCurrentModel);
 
   // Clerk's useAuth returns a fresh getToken function on every render. Stash
   // it in a ref so this effect doesn't re-fire (and reset the streaming
@@ -30,6 +31,7 @@ export default function ChatThreadPage() {
         // Don't clobber an in-flight stream — only seed messages if we're idle.
         if (!cancelled && useChatStore.getState().streamingState === "idle") {
           setMessages(res.messages);
+          setCurrentModel(res.conversation.current_model);
         }
       } catch (e) {
         console.error(e);

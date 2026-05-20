@@ -20,8 +20,11 @@ class Settings(BaseSettings):
     clerk_issuer: str = ""  # e.g. https://your-clerk-instance.clerk.accounts.dev
     clerk_webhook_secret: str = ""  # whsec_... from Clerk dashboard
 
-    # Gemini / LiteLLM
+    # Provider API keys (LiteLLM picks the right one per adapter).
+    # All Phase 2 providers are free-tier: signup-only, no credit card.
     gemini_api_key: str = ""
+    mistral_api_key: str = ""
+    groq_api_key: str = ""
     default_model: str = "gemini-2.5-flash"
 
     # Rate limiting
