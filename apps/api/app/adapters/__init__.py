@@ -17,6 +17,8 @@ from __future__ import annotations
 
 from app.adapters.base import (
     ProviderAdapter,
+    ProviderCapabilities,
+    ResolvedFile,
     StreamEvent,
     StreamEventType,
     TranslationRequest,
@@ -28,6 +30,8 @@ from app.adapters.mistral_adapter import MistralAdapter
 
 __all__ = [
     "ProviderAdapter",
+    "ProviderCapabilities",
+    "ResolvedFile",
     "StreamEvent",
     "StreamEventType",
     "TranslationRequest",
@@ -57,6 +61,9 @@ _MODEL_TABLE: dict[str, tuple[type, str]] = {
     "groq-llama-3.1-8b": (GroqAdapter, "llama-3.1-8b-instant"),
     # "groq-llama-3.3-70b": (GroqAdapter, "llama-3.3-70b-versatile"),
     # "groq-gemma2-9b": (GroqAdapter, "gemma2-9b-it"),
+    # Phase 3: vision-capable Llama 4 Scout for image-bearing chats and
+    # for the file-pipeline's description generator (settings.description_model).
+    "groq-llama-vision": (GroqAdapter, "meta-llama/llama-4-scout-17b-16e-instruct"),
 }
 
 

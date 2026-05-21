@@ -2,13 +2,37 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@clerk/nextjs";
-import type { ContentBlock, Message } from "@synq/shared-types";
+import type {
+  ContentBlock,
+  FileStatusResponse,
+  Message,
+} from "@synq/shared-types";
 import { useChatStore } from "@/lib/store";
 import {
+  getFileStatus,
   listModels,
   sendMessageStream,
   updateConversation,
+  uploadFile,
 } from "@/lib/api";
+
+const IMAGE_MIMES = new Set(["image/png", "image/jpeg", "image/webp"]);
+
+type UploadState = {
+  /** Local id used for chip-row reconciliation while the upload is in-flight. */
+  localId: string;
+  filename: string;
+  mime: string;
+  sizeBytes: number;
+  /** 0–100 for upload progress; -1 once upload is done and parse is pending. */
+  progress: number;
+  /** Server-side file id, populated after upload completes. */
+  fileId?: string;
+  /** From GET /files/{id}: pending | done | failed. */
+  parseStatus?: "pending" | "done" | "failed";
+  /** Last error message, if any. */
+  error?: string;
+};
 
 function newIdempotencyKey() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -22,6 +46,14 @@ function extractText(content: ContentBlock[]): string {
     .filter((b): b is Extract<ContentBlock, { type: "text" }> => b.type === "text")
     .map((b) => b.text)
     .join("");
+}
+
+function attachmentSummary(content: ContentBlock[]): string {
+  const n = content.filter(
+    (b) => b.type === "image" || b.type === "file_ref",
+  ).length;
+  if (n === 0) return "";
+  return ` · ${n} attachment${n === 1 ? "" : "s"}`;
 }
 
 export function ChatWindow({ conversationId }: { conversationId: string }) {
@@ -48,14 +80,15 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   const failStream = useChatStore((s) => s.failStream);
 
   const [input, setInput] = useState("");
+  const [uploads, setUploads] = useState<UploadState[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Stable getToken — Clerk hands a fresh function on every render.
   const tokenRef = useRef(getToken);
   tokenRef.current = getToken;
 
-  // Fetch models once per session.
   useEffect(() => {
     if (models.length > 0) return;
     (async () => {
@@ -68,22 +101,48 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
     })();
   }, [models.length, setModels]);
 
-  // Abort any in-flight stream on unmount.
-  useEffect(() => {
-    return () => {
-      abortRef.current?.abort();
-    };
-  }, []);
+  useEffect(() => () => abortRef.current?.abort(), []);
 
-  // Auto-scroll to the bottom on new content.
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages.length, streamingText, pendingUserText]);
 
+  // Poll parse status for any uploads whose status is still pending.
+  // Cheap: one GET /files/{id} per second per chip until parse_status flips.
+  useEffect(() => {
+    const pendingIds = uploads
+      .filter((u) => u.fileId && u.parseStatus === "pending")
+      .map((u) => u.fileId!) as string[];
+    if (pendingIds.length === 0) return;
+    const interval = setInterval(async () => {
+      const results = await Promise.allSettled(
+        pendingIds.map((id) => getFileStatus(() => tokenRef.current(), id)),
+      );
+      setUploads((prev) =>
+        prev.map((u) => {
+          if (!u.fileId) return u;
+          const r = results.find(
+            (x): x is PromiseFulfilledResult<FileStatusResponse> =>
+              x.status === "fulfilled" && x.value.file_id === u.fileId,
+          );
+          if (!r) return u;
+          return {
+            ...u,
+            parseStatus: r.value.parse_status,
+            error:
+              r.value.parse_status === "failed"
+                ? ((r.value.error as { message?: string } | null)?.message ??
+                  "parse_failed")
+                : u.error,
+          };
+        }),
+      );
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [uploads]);
+
   const onModelChange = useCallback(
     async (next: string) => {
-      // Optimistic local update so the picker feels instant; the PATCH
-      // persists it server-side and kicks off the token-count backfill.
       setCurrentModel(next);
       try {
         await updateConversation(() => tokenRef.current(), conversationId, {
@@ -96,15 +155,120 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
     [conversationId, setCurrentModel],
   );
 
+  // ── Upload helpers ────────────────────────────────────────────────
+  const acceptFiles = useCallback(
+    async (files: File[]) => {
+      const next: UploadState[] = files.map((f) => ({
+        localId: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        filename: f.name,
+        mime: f.type,
+        sizeBytes: f.size,
+        progress: 0,
+      }));
+      setUploads((u) => [...u, ...next]);
+
+      await Promise.all(
+        files.map(async (f, i) => {
+          const localId = next[i].localId;
+          try {
+            const res = await uploadFile(() => tokenRef.current(), f, {
+              conversationId,
+              onProgress: (pct) =>
+                setUploads((u) =>
+                  u.map((x) =>
+                    x.localId === localId ? { ...x, progress: pct } : x,
+                  ),
+                ),
+            });
+            setUploads((u) =>
+              u.map((x) =>
+                x.localId === localId
+                  ? {
+                      ...x,
+                      progress: -1,
+                      fileId: res.file_id,
+                      parseStatus: res.parse_status,
+                    }
+                  : x,
+              ),
+            );
+          } catch (e) {
+            setUploads((u) =>
+              u.map((x) =>
+                x.localId === localId
+                  ? { ...x, parseStatus: "failed", error: (e as Error).message }
+                  : x,
+              ),
+            );
+          }
+        }),
+      );
+    },
+    [conversationId],
+  );
+
+  const onPickFiles = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(e.target.files ?? []);
+      if (files.length) void acceptFiles(files);
+      // Reset so picking the same file again still triggers onChange.
+      e.target.value = "";
+    },
+    [acceptFiles],
+  );
+
+  const onDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragging(false);
+      const files = Array.from(e.dataTransfer.files);
+      if (files.length) void acceptFiles(files);
+    },
+    [acceptFiles],
+  );
+
+  const onPaste = useCallback(
+    (e: React.ClipboardEvent) => {
+      const items = Array.from(e.clipboardData.items);
+      const files = items
+        .filter((it) => it.kind === "file")
+        .map((it) => it.getAsFile())
+        .filter((x): x is File => x !== null);
+      if (files.length) void acceptFiles(files);
+    },
+    [acceptFiles],
+  );
+
+  const removeUpload = useCallback((localId: string) => {
+    setUploads((u) => u.filter((x) => x.localId !== localId));
+  }, []);
+
   const handleSubmit = useCallback(
     async (e?: React.FormEvent) => {
       e?.preventDefault();
       const text = input.trim();
-      if (!text || streamingState !== "idle") return;
+      const readyAttachments = uploads.filter(
+        (u) => u.fileId && u.parseStatus !== "failed",
+      );
+      if (streamingState !== "idle") return;
+      if (!text && readyAttachments.length === 0) return;
       setInput("");
+      // Clear chips up front; the message bubble represents them now.
+      setUploads([]);
+
+      const content: ContentBlock[] = [];
+      if (text) content.push({ type: "text", text });
+      for (const u of readyAttachments) {
+        if (!u.fileId) continue;
+        if (IMAGE_MIMES.has(u.mime)) {
+          content.push({ type: "image", file_id: u.fileId });
+        } else {
+          content.push({ type: "file_ref", file_id: u.fileId });
+        }
+      }
 
       const idempotencyKey = newIdempotencyKey();
-      beginSend(text);
+      beginSend(text + attachmentSummary(content));
 
       const controller = new AbortController();
       abortRef.current?.abort();
@@ -115,7 +279,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
           () => tokenRef.current(),
           conversationId,
           {
-            content: [{ type: "text", text }],
+            content,
             idempotencyKey,
             model: currentModel ?? undefined,
           },
@@ -144,6 +308,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
     },
     [
       input,
+      uploads,
       streamingState,
       conversationId,
       currentModel,
@@ -158,9 +323,20 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   );
 
   const activeModel = currentModel ?? defaultModel ?? "";
+  const hasPendingParse = uploads.some(
+    (u) => u.fileId && u.parseStatus === "pending",
+  );
 
   return (
-    <div className="flex h-full flex-col">
+    <div
+      className="flex h-full flex-col"
+      onDragOver={(e) => {
+        e.preventDefault();
+        setIsDragging(true);
+      }}
+      onDragLeave={() => setIsDragging(false)}
+      onDrop={onDrop}
+    >
       <header className="flex items-center justify-between border-b border-gray-200 bg-white px-6 py-3">
         <div className="text-sm font-medium text-gray-700">Chat</div>
         <label className="flex items-center gap-2 text-xs text-gray-500">
@@ -195,13 +371,13 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
         </div>
       )}
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-6">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-6 relative">
         <div className="mx-auto flex max-w-2xl flex-col gap-6">
           {messages.map((m) => (
             <Bubble
               key={m.id}
               role={m.role}
-              text={extractText(m.content)}
+              text={extractText(m.content) + attachmentSummary(m.content)}
               meta={m}
               switched={!!switchedTurnIds[m.id]}
             />
@@ -218,29 +394,123 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
             </div>
           )}
         </div>
+        {isDragging && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-gray-900/30 backdrop-blur-sm text-white text-sm font-medium">
+            Drop files to attach
+          </div>
+        )}
       </div>
 
       <form
         onSubmit={handleSubmit}
         className="border-t border-gray-200 bg-white p-4"
       >
-        <div className="mx-auto flex max-w-2xl gap-2">
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder={`Message ${activeModel || "the assistant"}…`}
-            className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm outline-none focus:border-gray-900"
-            disabled={streamingState !== "idle"}
-          />
-          <button
-            type="submit"
-            disabled={streamingState !== "idle" || !input.trim()}
-            className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700 disabled:cursor-not-allowed disabled:bg-gray-300"
-          >
-            Send
-          </button>
+        <div className="mx-auto flex max-w-2xl flex-col gap-2">
+          {uploads.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {uploads.map((u) => (
+                <UploadChip
+                  key={u.localId}
+                  upload={u}
+                  onRemove={() => removeUpload(u.localId)}
+                />
+              ))}
+            </div>
+          )}
+          {hasPendingParse && (
+            <div className="text-[11px] text-amber-700">
+              Files still processing — send now to attach as-is, or wait for parsing to finish.
+            </div>
+          )}
+          <div className="flex gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept=".pdf,.png,.jpg,.jpeg,.webp,.docx,.txt,.md"
+              className="hidden"
+              onChange={onPickFiles}
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={streamingState !== "idle"}
+              className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+              title="Attach file"
+            >
+              +
+            </button>
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onPaste={onPaste}
+              placeholder={`Message ${activeModel || "the assistant"}…`}
+              className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm outline-none focus:border-gray-900"
+              disabled={streamingState !== "idle"}
+            />
+            <button
+              type="submit"
+              disabled={
+                streamingState !== "idle" ||
+                (!input.trim() && uploads.filter((u) => u.fileId).length === 0)
+              }
+              className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+            >
+              Send
+            </button>
+          </div>
         </div>
       </form>
+    </div>
+  );
+}
+
+function UploadChip({
+  upload,
+  onRemove,
+}: {
+  upload: UploadState;
+  onRemove: () => void;
+}) {
+  const isFailed = upload.parseStatus === "failed";
+  const isParsing = upload.fileId && upload.parseStatus === "pending";
+  const isDone = upload.parseStatus === "done";
+  const isUploading = upload.progress >= 0;
+
+  return (
+    <div
+      className={`flex items-center gap-2 rounded-full border px-3 py-1 text-xs ${
+        isFailed
+          ? "border-red-300 bg-red-50 text-red-800"
+          : isDone
+            ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+            : "border-gray-300 bg-gray-50 text-gray-700"
+      }`}
+    >
+      <span className="max-w-[180px] truncate font-medium">
+        {upload.filename}
+      </span>
+      <span className="text-[10px] text-gray-500">
+        {(upload.sizeBytes / 1024).toFixed(0)}KB
+      </span>
+      {isUploading && (
+        <span className="text-[10px] text-blue-700">{upload.progress}%</span>
+      )}
+      {isParsing && <span className="text-[10px] text-amber-700">parsing…</span>}
+      {isDone && <span className="text-[10px] text-emerald-700">ready</span>}
+      {isFailed && (
+        <span className="text-[10px] text-red-700" title={upload.error}>
+          failed
+        </span>
+      )}
+      <button
+        type="button"
+        onClick={onRemove}
+        className="ml-1 rounded-full px-1 text-gray-400 hover:bg-gray-200 hover:text-gray-700"
+        aria-label="Remove attachment"
+      >
+        ×
+      </button>
     </div>
   );
 }

@@ -64,6 +64,26 @@ services:
       timeout: 20s
       retries: 3
 
+  # One-shot bootstrap: ensures the synq-files bucket exists with
+  # private ACL so the API can write without first touching the console.
+  minio_bootstrap:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-synq_minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-synq_minio_password}
+      S3_BUCKET: ${S3_BUCKET:-synq-files}
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD &&
+      mc mb --ignore-existing local/$$S3_BUCKET &&
+      mc anonymous set none local/$$S3_BUCKET &&
+      echo 'synq: bucket $$S3_BUCKET ready'
+      "
+    restart: "no"
+
 volumes:
   postgres_data:
   redis_cache_data:

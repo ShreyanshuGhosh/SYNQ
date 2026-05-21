@@ -101,6 +101,11 @@ class File(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     chunks: Mapped[list[Any]] = mapped_column(JSONB, server_default="[]", nullable=False)
     parse_status: Mapped[str] = mapped_column(Text, server_default="pending", nullable=False)
+    original_filename: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    conversation_id: Mapped[UUID | None] = mapped_column(
+        PgUUID(as_uuid=True), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

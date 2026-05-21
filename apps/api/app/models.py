@@ -123,7 +123,18 @@ class File(BaseModel):
     description: str | None
     chunks: list[Any] = Field(default_factory=list)
     parse_status: ParseStatus
+    original_filename: str | None = None
+    error: dict[str, Any] | None = None
+    conversation_id: UUID | None = None
     created_at: datetime
+
+
+class FileChunk(BaseModel):
+    """One slice of a long document, stored verbatim inside files.chunks."""
+
+    chunk_id: int
+    text: str
+    page: int | None = None
 
 
 class AuditLog(BaseModel):
@@ -163,3 +174,34 @@ class SendMessageRequest(BaseModel):
     content: list[ContentBlock]
     model: str | None = None  # defaults to settings.default_model
     idempotency_key: str | None = None
+
+
+# ── File API responses ──────────────────────────────────────────────────
+
+
+class FileUploadResponse(BaseModel):
+    """Returned by POST /files. The id is what goes into messages.content
+    as {"type":"image","file_id": id} or {"type":"file_ref","file_id": id}.
+
+    The client polls GET /files/{id} until `parse_status == 'done'`
+    before sending the message. The chat UI shows a "processing" badge
+    in the meantime but does not block submit.
+    """
+
+    file_id: UUID
+    parse_status: ParseStatus
+    mime_type: str | None
+    original_filename: str | None
+    size_bytes: int | None
+
+
+class FileStatusResponse(BaseModel):
+    file_id: UUID
+    parse_status: ParseStatus
+    mime_type: str | None
+    original_filename: str | None
+    size_bytes: int | None
+    has_description: bool
+    has_extracted_text: bool
+    chunk_count: int
+    error: dict[str, Any] | None

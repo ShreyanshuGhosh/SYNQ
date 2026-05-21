@@ -22,12 +22,28 @@ from typing import Any
 
 from app.adapters._openai_compat import (
     count_openai_compatible,
+    messages_to_openai_vision_wire,
     messages_to_openai_wire,
     stream_openai_compatible,
 )
-from app.adapters.base import StreamEvent, ValidationResult
+from app.adapters._resolve import default_resolve
+from app.adapters.base import (
+    ProviderCapabilities,
+    ResolvedFile,
+    StreamEvent,
+    ValidationResult,
+)
 from app.config import settings
 from app.models import Message
+
+
+# Vision flag flips per model: llama-3.1-8b-instant is text-only;
+# llama-4-scout-17b-16e-instruct supports image input. Per-model
+# capabilities are kept here rather than in the registry because the
+# adapter knows its own model_id.
+_VISION_MODELS = {
+    "meta-llama/llama-4-scout-17b-16e-instruct",
+}
 
 
 class GroqAdapter:
@@ -41,12 +57,32 @@ class GroqAdapter:
     def __init__(self, model: str, provider_model_id: str) -> None:
         self.model = model
         self.provider_model_id = provider_model_id
+        if provider_model_id in _VISION_MODELS:
+            # Groq accepts inline base64 up to ~20MB via the OpenAI-style
+            # `image_url: {url: data:...}` block.
+            self.capabilities = ProviderCapabilities(vision=True, max_image_mb=20)
+        else:
+            self.capabilities = ProviderCapabilities(vision=False, max_image_mb=0)
 
-    async def translate_messages(self, canonical: list[Message]) -> dict[str, Any]:
-        """Canonical -> OpenAI wire (system as a message, not top-level)."""
+    async def translate_messages(
+        self,
+        canonical: list[Message],
+        resolved: dict[str, ResolvedFile] | None = None,
+    ) -> dict[str, Any]:
+        """Canonical -> OpenAI wire (system as a message, not top-level).
+
+        Vision-capable Groq models (llama-4-scout) receive multimodal
+        parts arrays on user messages; text-only models stay on the
+        plain-content path.
+        """
+        if self.capabilities.vision and resolved:
+            return {
+                "model": self.provider_model_id,
+                "messages": messages_to_openai_vision_wire(canonical, resolved),
+            }
         return {
             "model": self.provider_model_id,
-            "messages": messages_to_openai_wire(canonical),
+            "messages": messages_to_openai_wire(canonical, resolved),
         }
 
     async def translate_tools(self, tools: list[dict[str, Any]]) -> dict[str, Any]:
@@ -89,6 +125,13 @@ class GroqAdapter:
             errors.append("groq: empty messages array")
         # Groq rejects empty `content` strings on user messages.
         for i, m in enumerate(msgs):
-            if m.get("role") == "user" and not (m.get("content") or "").strip():
-                errors.append(f"groq: empty user content at index {i}")
+            if m.get("role") == "user":
+                content = m.get("content")
+                # Vision messages have `content` as a list of parts; only
+                # plain-string user messages are required to be non-empty.
+                if isinstance(content, str) and not content.strip():
+                    errors.append(f"groq: empty user content at index {i}")
         return ValidationResult(ok=not errors, errors=errors, warnings=warnings)
+
+    async def resolve_file(self, file_row: Any) -> ResolvedFile:
+        return default_resolve(file_row, capabilities=self.capabilities)

@@ -30,6 +30,20 @@ class Settings(BaseSettings):
     # Rate limiting
     rate_limit_per_minute: int = 60
 
+    # File pipeline (Phase 3)
+    # Hard upload ceiling enforced at the API edge before bytes hit S3.
+    max_file_size_mb: int = 20
+    # Documents over this token count get chunked into ~500-token chunks.
+    chunk_trigger_tokens: int = 4000
+    chunk_target_tokens: int = 500
+    # Vision description model — kept independent of the user's currently
+    # selected chat model so cost stays predictable. Free-tier Groq
+    # vision-capable Llama works for OCR/captioning; swap to gpt-4o-mini
+    # or claude-haiku once funded (SYNQ_STRUCT §"File Pipeline").
+    description_model: str = "groq-llama-vision"
+    # Gemini Files API (returned URIs are valid for 48h per Google docs).
+    gemini_file_ttl_seconds: int = 47 * 60 * 60
+
     @property
     def sync_database_url(self) -> str:
         """psycopg URL for Alembic migrations (sync driver)."""

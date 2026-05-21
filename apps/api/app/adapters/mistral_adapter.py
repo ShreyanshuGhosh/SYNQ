@@ -31,7 +31,13 @@ from app.adapters._openai_compat import (
     messages_to_openai_wire,
     stream_openai_compatible,
 )
-from app.adapters.base import StreamEvent, ValidationResult
+from app.adapters._resolve import default_resolve
+from app.adapters.base import (
+    ProviderCapabilities,
+    ResolvedFile,
+    StreamEvent,
+    ValidationResult,
+)
 from app.config import settings
 from app.models import Message
 
@@ -41,6 +47,10 @@ class MistralAdapter:
     # Mistral Small 3.x ships a 32k context window; Large is 128k. Use
     # the smaller default — Phase 4 will key this per model.
     context_window = 32_000
+    # The free-tier `mistral-small-latest` is text-only. `pixtral-12b` is
+    # multimodal but lives on a paid plan; we keep capabilities at the
+    # safe text-only default and let the resolver substitute descriptions.
+    capabilities = ProviderCapabilities(vision=False, max_image_mb=0)
 
     _API_BASE = "https://api.mistral.ai/v1"
 
@@ -48,11 +58,19 @@ class MistralAdapter:
         self.model = model
         self.provider_model_id = provider_model_id
 
-    async def translate_messages(self, canonical: list[Message]) -> dict[str, Any]:
-        """Canonical -> OpenAI wire (system stays as role='system')."""
+    async def translate_messages(
+        self,
+        canonical: list[Message],
+        resolved: dict[str, ResolvedFile] | None = None,
+    ) -> dict[str, Any]:
+        """Canonical -> OpenAI wire (system stays as role='system').
+
+        Mistral free-tier is text-only, so file blocks become
+        description text via the resolved-files map.
+        """
         return {
             "model": self.provider_model_id,
-            "messages": messages_to_openai_wire(canonical),
+            "messages": messages_to_openai_wire(canonical, resolved),
         }
 
     async def translate_tools(self, tools: list[dict[str, Any]]) -> dict[str, Any]:
@@ -102,3 +120,8 @@ class MistralAdapter:
             ).strip():
                 errors.append(f"mistral: empty {m['role']} content at index {i}")
         return ValidationResult(ok=not errors, errors=errors, warnings=warnings)
+
+    async def resolve_file(self, file_row: Any) -> ResolvedFile:
+        # Text-only on the free tier: always substitute description /
+        # extracted text. The shared resolver handles every case.
+        return default_resolve(file_row, capabilities=self.capabilities)

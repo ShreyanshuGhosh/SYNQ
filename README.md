@@ -2,7 +2,7 @@
 
 Cross-agent conversation continuity SaaS. Users continue conversations across AI providers (Claude, GPT, Gemini) when they hit rate limits, want to switch models, or need different capabilities.
 
-**Current status: Phase 1 (Foundation) — Clerk auth, Postgres schema, conversation REST API, LiteLLM streaming (Gemini 2.5 Flash for free-tier dev; swap to Anthropic once funded), Next.js chat UI with Zustand + SSE.**
+**Current status: Phase 3 (Multimodal) — adds file uploads to S3/MinIO, an async Celery parse pipeline (PDFs, DOCX, images with OCR + Groq vision descriptions, TXT/MD), per-provider `resolve_file` with vision capability flags, Gemini Files API with Redis URI caching, and a chat UI that supports drag-drop / paste / chip-row attachments. Phase 1 and Phase 2 deliverables remain in place.**
 
 ---
 
@@ -116,6 +116,23 @@ uv run uvicorn app.main:app --reload --port 8000
 # → http://localhost:8000/health
 # → http://localhost:8000/docs  (Swagger UI)
 ```
+
+**Celery worker** (Phase 3 — separate terminal, from `apps/api/`):
+```bash
+uv run celery -A app.workers.celery_app worker --loglevel=info
+```
+
+**Celery beat** (optional today; wired for Phase 4 scheduled jobs):
+```bash
+uv run celery -A app.workers.celery_app beat --loglevel=info
+```
+
+**Tesseract OCR** (Phase 3 image pipeline) — install once:
+- Windows: download from <https://github.com/UB-Mannheim/tesseract/wiki> and add `tesseract.exe` to PATH.
+- macOS: `brew install tesseract`
+- Linux: `sudo apt install tesseract-ocr`
+
+OCR is best-effort: if tesseract isn't available, the vision-model description from Groq still populates `files.description` and a text-only target reads from there.
 
 **Web** (from repo root):
 ```bash

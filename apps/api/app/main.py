@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import conversations, webhooks
+from app.routers import conversations, files, webhooks
 from app.routers.conversations import models_router
 
 app = FastAPI(
@@ -22,6 +22,7 @@ app.add_middleware(
 app.include_router(conversations.router)
 app.include_router(models_router)
 app.include_router(webhooks.router)
+app.include_router(files.router)
 
 
 @app.get("/health")

@@ -3,6 +3,8 @@ import type {
   ContextWarningEvent,
   Conversation,
   CreateConversationResponse,
+  FileStatusResponse,
+  FileUploadResponse,
   GetConversationResponse,
   ListConversationsResponse,
   Message,
@@ -152,6 +154,55 @@ export async function* sendMessageStream(
   } finally {
     reader.releaseLock();
   }
+}
+
+export async function uploadFile(
+  getToken: GetToken,
+  file: File,
+  opts?: { conversationId?: string; onProgress?: (pct: number) => void },
+): Promise<FileUploadResponse> {
+  // Use XMLHttpRequest so we get progress events; fetch + ReadableStream
+  // would let us stream-read the response but doesn't expose upload progress.
+  const token = await getToken();
+  const form = new FormData();
+  form.append("file", file);
+  if (opts?.conversationId) form.append("conversation_id", opts.conversationId);
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${API_BASE}/files`);
+    if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && opts?.onProgress) {
+        opts.onProgress(Math.round((e.loaded / e.total) * 100));
+      }
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText) as FileUploadResponse);
+        } catch (e) {
+          reject(e);
+        }
+      } else {
+        reject(new Error(`uploadFile: ${xhr.status} ${xhr.responseText}`));
+      }
+    };
+    xhr.onerror = () => reject(new Error("uploadFile: network error"));
+    xhr.send(form);
+  });
+}
+
+export async function getFileStatus(
+  getToken: GetToken,
+  fileId: string,
+): Promise<FileStatusResponse> {
+  const res = await fetch(`${API_BASE}/files/${fileId}`, {
+    headers: await authHeaders(getToken),
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`getFileStatus: ${res.status}`);
+  return res.json();
 }
 
 function parseSSEBlock(block: string): ChatEvent | null {

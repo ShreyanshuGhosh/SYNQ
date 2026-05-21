@@ -332,7 +332,7 @@ async def send_message(
     async def event_source() -> AsyncIterator[dict[str, str]]:
         yield _sse("user_message", user_msg_payload)
 
-        plan = await plan_turn(history, target_model)
+        plan = await plan_turn(history, target_model, user_id=user.id)
 
         # Surface the planning outcome to the UI BEFORE tokens start
         # arriving. The UI uses these to render the "Switched to X"

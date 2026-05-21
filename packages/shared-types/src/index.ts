@@ -113,7 +113,30 @@ export interface File {
   description: string | null;
   chunks: unknown[];
   parse_status: ParseStatus;
+  original_filename?: string | null;
+  error?: Record<string, unknown> | null;
+  conversation_id?: UUID | null;
   created_at: string;
+}
+
+export interface FileUploadResponse {
+  file_id: UUID;
+  parse_status: ParseStatus;
+  mime_type: string | null;
+  original_filename: string | null;
+  size_bytes: number | null;
+}
+
+export interface FileStatusResponse {
+  file_id: UUID;
+  parse_status: ParseStatus;
+  mime_type: string | null;
+  original_filename: string | null;
+  size_bytes: number | null;
+  has_description: boolean;
+  has_extracted_text: boolean;
+  chunk_count: number;
+  error: Record<string, unknown> | null;
 }
 
 export interface AuditLog {

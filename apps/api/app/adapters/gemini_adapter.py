@@ -20,10 +20,18 @@ from typing import Any
 
 import litellm
 
+from app.adapters._gemini_files import resolve_for_gemini
 from app.adapters._openai_compat import blocks_to_text, stream_openai_compatible
-from app.adapters.base import StreamEvent, ValidationResult
+from app.adapters._resolve import default_resolve, is_image
+from app.adapters.base import (
+    ProviderCapabilities,
+    ResolvedFile,
+    StreamEvent,
+    ValidationResult,
+)
 from app.config import settings
-from app.models import Message
+from app.models import FileRefBlock, ImageBlock, Message, TextBlock
+from app.storage import download_bytes, key_from_storage_url
 
 
 def _canonical_role_to_gemini(role: str) -> str:
@@ -42,12 +50,23 @@ class GeminiAdapter:
     provider = "gemini"
     # 1M tokens on 2.5 Pro/Flash. Single conservative value for Phase 2.
     context_window = 1_000_000
+    # Gemini 2.5 Flash and Pro are vision-capable. Inline base64 is
+    # capped at ~20MB per request; for anything larger the Files API
+    # path kicks in (Google's docs allow up to 2GB via Files API but
+    # we keep the Phase 3 ceiling at 20MB per the spec).
+    capabilities = ProviderCapabilities(
+        vision=True, max_image_mb=20, supports_files_api=True
+    )
 
     def __init__(self, model: str, provider_model_id: str) -> None:
         self.model = model
         self.provider_model_id = provider_model_id
 
-    async def translate_messages(self, canonical: list[Message]) -> dict[str, Any]:
+    async def translate_messages(
+        self,
+        canonical: list[Message],
+        resolved: dict[str, ResolvedFile] | None = None,
+    ) -> dict[str, Any]:
         """Canonical -> Gemini native wire format.
 
         Output:
@@ -55,24 +74,66 @@ class GeminiAdapter:
               "model": "<id>",
               "systemInstruction": {"parts": [{"text": "..."}]} | None,
               "contents": [
-                  {"role": "user"|"model", "parts": [{"text": "..."}]},
+                  {"role": "user"|"model",
+                   "parts": [{"text": "..."} | {"inline_data": ...} | {"file_data": ...}]},
                   ...
               ],
             }
+
+        File blocks become ``file_data`` (Files API URI) or
+        ``inline_data`` (base64) parts; never silently dropped.
         """
+        import base64 as _b64
+
+        resolved = resolved or {}
         system_parts: list[str] = []
         contents: list[dict[str, Any]] = []
         for m in canonical:
-            text = blocks_to_text(m.content)
             if m.role == "system":
+                text = blocks_to_text(m.content, resolved)
                 if text:
                     system_parts.append(text)
                 continue
+            parts: list[dict[str, Any]] = []
+            for block in m.content:
+                if isinstance(block, TextBlock) and block.text:
+                    parts.append({"text": block.text})
+                elif isinstance(block, (ImageBlock, FileRefBlock)):
+                    rf = resolved.get(str(block.file_id))
+                    if rf is None:
+                        continue
+                    if rf.inline_bytes and rf.mime_type:
+                        # Always prefer inline_data for LiteLLM transport.
+                        # LiteLLM's Gemini route cannot use Files API URIs
+                        # as image_url (returns 403 — auth required).
+                        # We store the Files API URI only in the cache;
+                        # inline base64 is what actually goes on the wire.
+                        b64 = _b64.b64encode(rf.inline_bytes).decode("ascii")
+                        parts.append(
+                            {
+                                "inline_data": {
+                                    "mime_type": rf.mime_type,
+                                    "data": b64,
+                                }
+                            }
+                        )
+                    elif rf.files_api_uri and not rf.inline_bytes:
+                        # Files API only (no local bytes) — pass the URI.
+                        # This branch is hit when bytes exceeded inline cap.
+                        parts.append(
+                            {
+                                "file_data": {
+                                    "file_uri": rf.files_api_uri,
+                                    "mime_type": rf.mime_type or "application/octet-stream",
+                                }
+                            }
+                        )
+                    elif rf.description_text:
+                        parts.append({"text": rf.description_text})
+            if not parts:
+                parts.append({"text": ""})
             contents.append(
-                {
-                    "role": _canonical_role_to_gemini(m.role),
-                    "parts": [{"text": text}],
-                }
+                {"role": _canonical_role_to_gemini(m.role), "parts": parts}
             )
 
         out: dict[str, Any] = {
@@ -113,7 +174,7 @@ class GeminiAdapter:
         ]
         litellm_model = self._litellm_routing_model()
         try:
-            return int(litellm.token_counter(model=litellm_model, messages=payload))
+            return litellm.token_counter(model=litellm_model, messages=payload)
         except Exception:
             return sum(len(p["content"]) for p in payload) // 4
 
@@ -135,10 +196,48 @@ class GeminiAdapter:
             role = entry["role"]
             if role == "model":
                 role = "assistant"  # back to canonical for LiteLLM
-            text = "\n".join(
-                part.get("text", "") for part in entry.get("parts", []) if "text" in part
+
+            # Reshape Gemini-native parts -> OpenAI-style content.
+            # Text-only entries stay as flat strings (assistant turns
+            # must always be strings). User turns with inline_data /
+            # file_data become a parts array LiteLLM forwards to Gemini.
+            entry_parts = entry.get("parts", [])
+            has_media = any(
+                ("inline_data" in p) or ("file_data" in p) for p in entry_parts
             )
-            messages.append({"role": role, "content": text})
+            if not has_media or role != "user":
+                text = "\n".join(
+                    p.get("text", "") for p in entry_parts if "text" in p
+                )
+                messages.append({"role": role, "content": text})
+                continue
+
+            openai_parts: list[dict[str, Any]] = []
+            for p in entry_parts:
+                if "text" in p and p["text"]:
+                    openai_parts.append({"type": "text", "text": p["text"]})
+                elif "inline_data" in p:
+                    data = p["inline_data"]
+                    openai_parts.append(
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{data.get('mime_type','image/png')};base64,{data.get('data','')}"
+                            },
+                        }
+                    )
+                elif "file_data" in p:
+                    # Large file (> inline cap) with Files API URI only.
+                    # Pass as text note — LiteLLM cannot auth against
+                    # Files API URIs for non-native Gemini calls.
+                    fd = p["file_data"]
+                    openai_parts.append(
+                        {
+                            "type": "text",
+                            "text": f"[Large file attached via Gemini Files API: {fd.get('file_uri', '')}]",
+                        }
+                    )
+            messages.append({"role": role, "content": openai_parts})
 
         return stream_openai_compatible(
             provider_model_id=self._litellm_routing_model(),
@@ -161,6 +260,52 @@ class GeminiAdapter:
             if not parts:
                 errors.append(f"gemini: empty parts at index {i}")
         return ValidationResult(ok=not errors, errors=errors, warnings=warnings)
+
+    async def resolve_file(self, file_row: Any) -> ResolvedFile:
+        """Gemini-specific: vision images go through the Files API.
+
+        Caching via Redis means a re-render of the same conversation
+        does not re-upload. Phase 4's RAG retrieval will use the same
+        cached URI for repeat hits.
+
+        Non-image files (PDF / DOCX / TXT / MD) fall through to the
+        shared resolver because the Files API would not give us text we
+        can summarize; we want our own extracted_text in the prompt.
+        """
+        if not is_image(file_row.mime_type):
+            return default_resolve(file_row, capabilities=self.capabilities)
+        if file_row.parse_status == "failed":
+            return default_resolve(file_row, capabilities=self.capabilities)
+
+        try:
+            raw = download_bytes(key_from_storage_url(file_row.storage_url))
+        except Exception:
+            return default_resolve(file_row, capabilities=self.capabilities)
+
+        # Cache the Files API URI for future reference / Phase 4 RAG,
+        # but always carry inline_bytes so stream_completion can send
+        # base64 to LiteLLM (LiteLLM cannot auth against Files API URIs).
+        uri = resolve_for_gemini(
+            str(file_row.id), raw, mime_type=file_row.mime_type or "image/png"
+        )
+        fits_inline = (file_row.size_bytes or 0) <= self.capabilities.max_image_mb * 1024 * 1024
+        if fits_inline:
+            return ResolvedFile(
+                file_id=str(file_row.id),
+                mime_type=file_row.mime_type,
+                inline_bytes=raw,
+                files_api_uri=uri,  # stored for replay/logging; not used on wire
+                strategy="inline" if not uri else "files_api",
+            )
+        # Image too large for inline — must use Files API URI directly.
+        if uri:
+            return ResolvedFile(
+                file_id=str(file_row.id),
+                mime_type=file_row.mime_type,
+                files_api_uri=uri,
+                strategy="files_api",
+            )
+        return default_resolve(file_row, capabilities=self.capabilities)
 
     # ── Internal ───────────────────────────────────────────────────────
 

@@ -27,11 +27,14 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
+from uuid import UUID
+
 from app.adapters import ProviderAdapter, adapter_for, provider_for
-from app.adapters.base import StreamEvent
+from app.adapters.base import ResolvedFile, StreamEvent
+from app.context_resolver import resolve_files_for_turn
 from app.models import Message, TextBlock
 
 logger = logging.getLogger(__name__)
@@ -63,11 +66,15 @@ class TurnPlan:
     drift_detected: bool
     prompt_token_estimate: int
     context_window: int
+    # Phase 3 — every file referenced in the (post-truncation) messages
+    # gets resolved to a ResolvedFile. Replay + adapters consume this.
+    resolved_files: dict[str, ResolvedFile] = field(default_factory=dict)
 
 
 async def plan_turn(
     history: list[Message],
     target_model: str,
+    user_id: UUID | None = None,
 ) -> TurnPlan:
     """Assemble the request for `target_model` given canonical history.
 
@@ -125,7 +132,13 @@ async def plan_turn(
                     threshold,
                 )
 
-    wire_request = await adapter.translate_messages(messages)
+    # Resolve every referenced file_id for THIS provider. This runs
+    # AFTER truncation so we don't waste an upload on a file that got
+    # dropped, and BEFORE translate_messages so adapters can substitute
+    # provider-native image/file blocks.
+    resolved_files = await resolve_files_for_turn(messages, adapter, user_id=user_id)
+
+    wire_request = await adapter.translate_messages(messages, resolved_files)
 
     return TurnPlan(
         adapter=adapter,
@@ -138,6 +151,7 @@ async def plan_turn(
         drift_detected=drift_detected,
         prompt_token_estimate=prompt_tokens,
         context_window=target_window,
+        resolved_files=resolved_files,
     )
 
 
