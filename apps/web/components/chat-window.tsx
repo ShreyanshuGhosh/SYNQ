@@ -11,6 +11,8 @@ import { useChatStore } from "@/lib/store";
 import {
   getFileStatus,
   listModels,
+  pinMessage,
+  unpinMessage,
   sendMessageStream,
   updateConversation,
   uploadFile,
@@ -82,6 +84,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   const [input, setInput] = useState("");
   const [uploads, setUploads] = useState<UploadState[]>([]);
   const [isDragging, setIsDragging] = useState(false);
+  const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -380,6 +383,27 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
               text={extractText(m.content) + attachmentSummary(m.content)}
               meta={m}
               switched={!!switchedTurnIds[m.id]}
+              isPinned={pinnedIds.has(m.id)}
+              onPin={async () => {
+                try {
+                  await pinMessage(() => tokenRef.current(), conversationId, m.id);
+                  setPinnedIds((prev) => new Set(prev).add(m.id));
+                } catch (e) {
+                  console.error("pin failed", e);
+                }
+              }}
+              onUnpin={async () => {
+                try {
+                  await unpinMessage(() => tokenRef.current(), conversationId, m.id);
+                  setPinnedIds((prev) => {
+                    const next = new Set(prev);
+                    next.delete(m.id);
+                    return next;
+                  });
+                } catch (e) {
+                  console.error("unpin failed", e);
+                }
+              }}
             />
           ))}
           {pendingUserText !== null && (
@@ -522,6 +546,9 @@ function Bubble({
   streaming,
   meta,
   switched,
+  isPinned,
+  onPin,
+  onUnpin,
 }: {
   role: "user" | "assistant" | "system";
   text: string;
@@ -529,28 +556,50 @@ function Bubble({
   streaming?: boolean;
   meta?: Message;
   switched?: boolean;
+  isPinned?: boolean;
+  onPin?: () => void;
+  onUnpin?: () => void;
 }) {
   const isUser = role === "user";
+  const canPin = !pending && !streaming && !!meta?.id && !!onPin;
   return (
-    <div className={`flex flex-col ${isUser ? "items-end" : "items-start"}`}>
+    <div className={`group flex flex-col ${isUser ? "items-end" : "items-start"}`}>
       {switched && !isUser && meta?.model_used && (
         <div className="mb-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-800">
           Switched to {meta.model_used}
         </div>
       )}
-      <div
-        className={`max-w-[85%] whitespace-pre-wrap rounded-lg px-4 py-2 text-sm ${
-          isUser
-            ? "bg-gray-900 text-white"
-            : "border border-gray-200 bg-white text-gray-900"
-        } ${pending ? "opacity-60" : ""}`}
-      >
-        {text || (streaming ? "…" : "")}
-        {meta?.model_used && !isUser ? (
-          <div className="mt-1 text-[10px] uppercase tracking-wide text-gray-400">
-            {meta.model_used}
-          </div>
-        ) : null}
+      <div className="relative max-w-[85%]">
+        <div
+          className={`whitespace-pre-wrap rounded-lg px-4 py-2 text-sm ${
+            isUser
+              ? "bg-gray-900 text-white"
+              : "border border-gray-200 bg-white text-gray-900"
+          } ${pending ? "opacity-60" : ""}`}
+        >
+          {text || (streaming ? "…" : "")}
+          {meta?.model_used && !isUser ? (
+            <div className="mt-1 text-[10px] uppercase tracking-wide text-gray-400">
+              {meta.model_used}
+            </div>
+          ) : null}
+        </div>
+        {canPin && (
+          <button
+            type="button"
+            onClick={isPinned ? onUnpin : onPin}
+            className={`absolute -top-2 ${
+              isUser ? "-left-2" : "-right-2"
+            } rounded-full border px-2 py-0.5 text-[10px] font-medium shadow-sm transition ${
+              isPinned
+                ? "opacity-100 border-amber-400 bg-amber-50 text-amber-800 hover:bg-red-50 hover:text-red-700 hover:border-red-300"
+                : "border-gray-300 bg-white text-gray-700 opacity-0 group-hover:opacity-100 hover:bg-amber-50 hover:text-amber-800"
+            }`}
+            title={isPinned ? "Click to unpin" : "Pin to context — survives compression"}
+          >
+            {isPinned ? "Pinned" : "Pin"}
+          </button>
+        )}
       </div>
     </div>
   );

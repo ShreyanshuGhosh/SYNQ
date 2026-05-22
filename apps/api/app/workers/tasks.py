@@ -90,7 +90,20 @@ def parse_file(self: Any, file_id: str, ext: str) -> dict[str, Any]:
                 len(chunks),
                 "yes" if row.description else "no",
             )
-            return {"status": "done", "chunks": len(chunks)}
+            # Phase 4: hand the chunks off to the embedder so the file
+            # is searchable from the next turn onward. Triggered AFTER
+            # the row update is committed so the worker reads chunks
+            # back from the DB (idempotent regardless).
+            chunk_count = len(chunks)
+        if chunk_count > 0:
+            try:
+                from app.workers.intelligence import embed_file_chunks
+                embed_file_chunks.delay(file_id)
+            except Exception:
+                logger.exception(
+                    "parse_file: failed to queue embed_file_chunks for %s", uid
+                )
+        return {"status": "done", "chunks": chunk_count}
     except Exception as exc:  # noqa: BLE001 — we mark failure and reraise
         logger.exception("parse_file: file_id=%s failed", uid)
         try:

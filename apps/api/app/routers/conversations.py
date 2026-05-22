@@ -65,6 +65,11 @@ from app.models import (
 from app.orchestrator import plan_turn, run_turn
 from app.orm import Conversation, Message
 from app.ratelimit import enforce_rate_limit
+from app.workers.dispatch import (
+    trigger_embed_message,
+    trigger_extract_facts,
+    trigger_rolling_summary_if_due,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -205,7 +210,89 @@ async def update_conversation(
         # Detach from request lifecycle. Errors are logged, never raised
         # — the PATCH must succeed even if backfill cannot.
         asyncio.create_task(_backfill_token_counts(conv.id, conv.current_model))
+        # Phase 4 — a model switch is the moment the summary matters
+        # most. Force-refresh even if not at the every-N boundary so
+        # the new model sees the fullest possible recap.
+        trigger_rolling_summary_if_due(conv.id, total_turns=0, force=True)
 
+    return ConversationModel.model_validate(conv)
+
+
+# ── Pinning (Phase 4) ───────────────────────────────────────────────────
+
+
+class PinMessageRequest(BaseModel):
+    """Pin one canonical message into ``conversations.pinned_context``.
+
+    The frontend renders a Pin button on hover over any message. Clicking
+    it copies the relevant content block(s) into the conversation's
+    pinned context so they survive compression.
+    """
+
+    message_id: UUID
+
+
+class UnpinRequest(BaseModel):
+    """Remove all pinned blocks that came from this message."""
+
+    message_id: UUID
+
+
+@router.post("/{conv_id}/pin", response_model=ConversationModel)
+async def pin_message(
+    conv_id: UUID,
+    body: PinMessageRequest,
+    user: AuthenticatedUser = Depends(enforce_rate_limit),
+    session: AsyncSession = Depends(get_session),
+) -> ConversationModel:
+    conv = await _load_owned_conversation(session, conv_id, user.id)
+    msg = (
+        await session.execute(
+            select(Message).where(
+                Message.id == body.message_id,
+                Message.conversation_id == conv.id,
+            )
+        )
+    ).scalar_one_or_none()
+    if msg is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="message_not_found")
+
+    pinned = list(conv.pinned_context or [])
+    # Dedupe — pin the same message twice = no-op.
+    already = {(p.get("source_message_id")) for p in pinned if isinstance(p, dict)}
+    if str(msg.id) in already:
+        return ConversationModel.model_validate(conv)
+    for block in msg.content or []:
+        if isinstance(block, dict):
+            item = dict(block)
+            item["source_message_id"] = str(msg.id)
+            item["source_turn_index"] = msg.turn_index
+            pinned.append(item)
+    conv.pinned_context = pinned
+    conv.version = (conv.version or 0) + 1
+    await session.commit()
+    await session.refresh(conv)
+    return ConversationModel.model_validate(conv)
+
+
+@router.post("/{conv_id}/unpin", response_model=ConversationModel)
+async def unpin_message(
+    conv_id: UUID,
+    body: UnpinRequest,
+    user: AuthenticatedUser = Depends(enforce_rate_limit),
+    session: AsyncSession = Depends(get_session),
+) -> ConversationModel:
+    conv = await _load_owned_conversation(session, conv_id, user.id)
+    mid = str(body.message_id)
+    pinned = [
+        p for p in (conv.pinned_context or [])
+        if not (isinstance(p, dict) and p.get("source_message_id") == mid)
+    ]
+    if len(pinned) != len(conv.pinned_context or []):
+        conv.pinned_context = pinned
+        conv.version = (conv.version or 0) + 1
+        await session.commit()
+        await session.refresh(conv)
     return ConversationModel.model_validate(conv)
 
 
@@ -311,6 +398,12 @@ async def send_message(
         ) from exc
     await session.refresh(user_msg)
 
+    # Phase 4: kick off the embedder for the user turn immediately so
+    # the RAG index is ready before the next turn comes in. The worker
+    # is idempotent (point id = uuid5(message_id)) so a missed fire
+    # can be re-run safely.
+    trigger_embed_message(user_msg.id)
+
     # Snapshot history for the model BEFORE handing off to the generator —
     # the request session will be closed by the time the generator runs.
     history_rows = list(
@@ -332,7 +425,12 @@ async def send_message(
     async def event_source() -> AsyncIterator[dict[str, str]]:
         yield _sse("user_message", user_msg_payload)
 
-        plan = await plan_turn(history, target_model, user_id=user.id)
+        plan = await plan_turn(
+            history,
+            target_model,
+            user_id=user.id,
+            conversation_id=conv_id_local,
+        )
 
         # Surface the planning outcome to the UI BEFORE tokens start
         # arriving. The UI uses these to render the "Switched to X"
@@ -403,10 +501,22 @@ async def send_message(
                 conv_row.current_model = target_model
             await ws.commit()
             await ws.refresh(assistant)
+            assistant_id = assistant.id
+            assistant_turn = assistant.turn_index
             yield _sse(
                 "done",
                 MessageModel.model_validate(assistant).model_dump(mode="json"),
             )
+
+        # Phase 4 — fire the three workers AFTER the SSE 'done' event.
+        # Order doesn't matter; tasks are independent and idempotent.
+        # The total-turn count is (assistant_turn + 1) since turns are
+        # zero-indexed; we trigger summary every N total turns.
+        trigger_embed_message(assistant_id)
+        trigger_extract_facts(conv_id_local)
+        trigger_rolling_summary_if_due(
+            conv_id_local, total_turns=assistant_turn + 1
+        )
 
     return EventSourceResponse(event_source())
 

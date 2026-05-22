@@ -46,6 +46,26 @@ services:
       timeout: 5s
       retries: 5
 
+  # Phase 4 — vector DB for RAG retrieval and rolling-context recall.
+  # Two collections live here: `messages` (one point per chat turn,
+  # 1024-dim mistral-embed) and `file_chunks` (one point per chunk
+  # produced by the Phase 3 parse pipeline, same embedding model).
+  qdrant:
+    image: qdrant/qdrant:v1.12.4
+    restart: unless-stopped
+    ports:
+      - "6333:6333"   # REST + gRPC HTTP
+      - "6334:6334"   # gRPC
+    volumes:
+      - qdrant_data:/qdrant/storage
+    # Qdrant's slim image has no curl/wget; the bash /dev/tcp test is
+    # POSIX-portable and just checks the REST port is accepting sockets.
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/6333' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   minio:
     image: minio/minio:latest
     restart: unless-stopped
@@ -89,3 +109,4 @@ volumes:
   redis_cache_data:
   redis_queue_data:
   minio_data:
+  qdrant_data:

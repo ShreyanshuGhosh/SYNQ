@@ -20,7 +20,7 @@ celery_app = Celery(
     "synq",
     broker=settings.redis_queue_url,
     backend=settings.redis_queue_url,
-    include=["app.workers.tasks"],
+    include=["app.workers.tasks", "app.workers.intelligence"],
 )
 
 celery_app.conf.update(

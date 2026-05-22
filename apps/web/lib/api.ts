@@ -156,6 +156,36 @@ export async function* sendMessageStream(
   }
 }
 
+/** Phase 4 — pin one message into the conversation's pinned_context. */
+export async function pinMessage(
+  getToken: GetToken,
+  conversationId: string,
+  messageId: string,
+): Promise<Conversation> {
+  const res = await fetch(`${API_BASE}/conversations/${conversationId}/pin`, {
+    method: "POST",
+    headers: await authHeaders(getToken),
+    body: JSON.stringify({ message_id: messageId }),
+  });
+  if (!res.ok) throw new Error(`pinMessage: ${res.status}`);
+  return res.json();
+}
+
+/** Phase 4 — remove all pinned blocks from this message. */
+export async function unpinMessage(
+  getToken: GetToken,
+  conversationId: string,
+  messageId: string,
+): Promise<Conversation> {
+  const res = await fetch(`${API_BASE}/conversations/${conversationId}/unpin`, {
+    method: "POST",
+    headers: await authHeaders(getToken),
+    body: JSON.stringify({ message_id: messageId }),
+  });
+  if (!res.ok) throw new Error(`unpinMessage: ${res.status}`);
+  return res.json();
+}
+
 export async function uploadFile(
   getToken: GetToken,
   file: File,

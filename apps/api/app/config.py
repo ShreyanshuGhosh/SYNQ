@@ -44,6 +44,37 @@ class Settings(BaseSettings):
     # Gemini Files API (returned URIs are valid for 48h per Google docs).
     gemini_file_ttl_seconds: int = 47 * 60 * 60
 
+    # ── Phase 4 — Intelligence ─────────────────────────────────────────
+    # Qdrant connection. Defaults match the docker-compose service.
+    qdrant_url: str = "http://localhost:6333"
+    qdrant_api_key: str | None = None
+    qdrant_collection_messages: str = "synq_messages"
+    qdrant_collection_file_chunks: str = "synq_file_chunks"
+
+    # Embedding model — Mistral mistral-embed is the free-tier swap for
+    # OpenAI's text-embedding-3-small called out in the architecture
+    # doc. 1024-dim vectors, plenty of capacity, no Anthropic/OpenAI key.
+    # The literal id below is what mistralai/litellm expect on the wire.
+    embedding_model: str = "mistral/mistral-embed"
+    embedding_dim: int = 1024
+
+    # Summary worker — runs on a CHEAP model (Groq Llama 3.1 8B is the
+    # free equivalent of Haiku/gpt-4o-mini called out in the spec).
+    # Per the Phase 4 hard constraint: hard-coded; not user-configurable.
+    summary_model: str = "groq/llama-3.1-8b-instant"
+    # Fact-extractor uses the same cheap model; kept as a separate knob
+    # in case we want to scale it independently later.
+    fact_extraction_model: str = "groq/llama-3.1-8b-instant"
+
+    # Context engine — six-part assembly tuning knobs. The architecture
+    # doc fixes these; we expose them as settings so the test fixture
+    # can shrink them when validating behavior on tiny conversations.
+    verbatim_window_turns: int = 15
+    rag_top_k: int = 8
+    summary_trigger_every_n_turns: int = 10
+    # Compression kicks in when token estimate exceeds window * ratio.
+    compression_trigger_ratio: float = 0.75
+
     @property
     def sync_database_url(self) -> str:
         """psycopg URL for Alembic migrations (sync driver)."""
