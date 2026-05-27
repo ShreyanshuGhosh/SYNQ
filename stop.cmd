@@ -12,6 +12,6 @@ echo [synq] stopping Next.js window...
 taskkill /FI "WINDOWTITLE eq synq-web*" /T /F >nul 2>&1
 
 echo [synq] stopping docker infra...
-docker compose -f "%~dp0docker-compose.yml" down
+docker compose -f "%~dp0docker-compose.yml" stop
 
 echo [synq] all stopped.
