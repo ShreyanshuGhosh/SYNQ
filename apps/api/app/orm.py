@@ -13,6 +13,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     DateTime,
     ForeignKey,
     Index,
@@ -109,6 +110,43 @@ class File(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class UsageEvent(Base):
+    """One row per assistant turn. Personal-use analytics source-of-truth.
+
+    Written by the ``cost_meter`` Celery task after each turn is persisted.
+    The UNIQUE on ``message_id`` makes the writer idempotent — Celery
+    retries collapse to a no-op via INSERT ... ON CONFLICT DO NOTHING.
+    """
+
+    __tablename__ = "usage_events"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    ts: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    conversation_id: Mapped[UUID | None] = mapped_column(
+        PgUUID(as_uuid=True), nullable=True
+    )
+    message_id: Mapped[UUID | None] = mapped_column(
+        PgUUID(as_uuid=True), nullable=True, unique=True
+    )
+    model: Mapped[str | None] = mapped_column(Text, nullable=True)
+    provider: Mapped[str | None] = mapped_column(Text, nullable=True)
+    prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(10, 6), nullable=True)
+    was_fallback: Mapped[bool] = mapped_column(
+        Boolean, server_default="false", nullable=False
+    )
+    fallback_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    fallback_from: Mapped[str | None] = mapped_column(Text, nullable=True)
+    compression_used: Mapped[bool] = mapped_column(
+        Boolean, server_default="false", nullable=False
+    )
+    rag_chunks_retrieved: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class AuditLog(Base):

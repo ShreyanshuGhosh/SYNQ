@@ -21,7 +21,8 @@
     "class-variance-authority": "^0.7.1",
     "lucide-react": "^0.468.0",
     "@radix-ui/react-slot": "^1.1.1",
-    "@synq/shared-types": "*"
+    "@synq/shared-types": "*",
+    "recharts": "^2.13.0"
   },
   "devDependencies": {
     "@types/node": "^20",

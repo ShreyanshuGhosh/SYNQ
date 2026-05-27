@@ -135,7 +135,13 @@ def _print_sections(plan) -> None:  # type: ignore[no-untyped-def]
     )
 
 
-async def _run(conv_id: UUID, target_model: str) -> None:
+async def _run(
+    conv_id: UUID,
+    target_model: str,
+    *,
+    show_cost: bool = False,
+    completion_tokens_guess: int = 500,
+) -> None:
     history = await _load_history(conv_id)
 
     _print_header("REPLAY")
@@ -196,6 +202,36 @@ async def _run(conv_id: UUID, target_model: str) -> None:
         for e in validation.errors:
             print(f"  - {e}")
 
+    if show_cost:
+        _print_cost_estimate(plan, completion_tokens_guess=completion_tokens_guess)
+
+
+def _print_cost_estimate(plan, completion_tokens_guess: int = 500) -> None:  # type: ignore[no-untyped-def]
+    """Phase 5 — append a cost estimate using the cost-meter price table.
+
+    We don't know the actual completion size at planning time, so we
+    guess 500 tokens — typical short-to-medium response. Tweak via the
+    --completion-tokens flag if you're testing a long-form response.
+    """
+    from app.workers.cost_meter import PRICE_TABLE, estimate_cost_usd
+
+    prompt = plan.prompt_token_estimate
+    completion = completion_tokens_guess
+    cost = estimate_cost_usd(plan.model, prompt, completion)
+    price = PRICE_TABLE.get(plan.model)
+
+    _print_header("COST ESTIMATE")
+    if price is None:
+        print(f"(no price entry for {plan.model} — defaulted to $0)")
+    print(f"prompt_tokens     : {prompt}")
+    print(f"completion_guess  : {completion}")
+    print(f"Estimated cost if sent to {plan.model}: ${cost:.4f}")
+    if price:
+        print(
+            f"  rate: ${price['prompt'] * 1_000_000:.3f}/1M prompt, "
+            f"${price['completion'] * 1_000_000:.3f}/1M completion"
+        )
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -213,6 +249,20 @@ def main() -> None:
             "Useful for inspecting the RAG path against fixture data."
         ),
     )
+    parser.add_argument(
+        "--show-cost",
+        action="store_true",
+        help=(
+            "Append a cost estimate using the cost-meter price table. "
+            "Phase 5 — useful for comparing models pre-send."
+        ),
+    )
+    parser.add_argument(
+        "--completion-tokens",
+        type=int,
+        default=500,
+        help="Assumed completion token count for the cost estimate (default 500).",
+    )
     args = parser.parse_args()
 
     try:
@@ -226,7 +276,14 @@ def main() -> None:
 
         _s.compression_trigger_ratio = 0.0001
 
-    asyncio.run(_run(conv_id, args.target_model))
+    asyncio.run(
+        _run(
+            conv_id,
+            args.target_model,
+            show_cost=args.show_cost,
+            completion_tokens_guess=args.completion_tokens,
+        )
+    )
 
 
 if __name__ == "__main__":

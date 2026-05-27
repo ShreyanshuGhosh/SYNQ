@@ -75,6 +75,41 @@ class Settings(BaseSettings):
     # Compression kicks in when token estimate exceeds window * ratio.
     compression_trigger_ratio: float = 0.75
 
+    # ── Phase 5 — Resilience ───────────────────────────────────────────
+    # Comma-separated chain of canonical model ids (matches keys in the
+    # adapter registry). Order = preference. The router walks this chain
+    # on failure of the preferred model.
+    fallback_chain: str = "gemini-2.5-flash,groq-llama-3.1-8b,mistral-small-latest"
+    # Promote the cheapest/fastest model in the chain to first position
+    # when the prompt is small (default <200 tokens). Saves quota on
+    # one-liners. Toggle off if you always want the preferred model.
+    cost_aware_routing: bool = True
+    cost_aware_prompt_threshold: int = 200
+
+    # Circuit breaker — Redis sliding window. Thresholds match the
+    # ARCHITECTURE §"Circuit Breakers" spec.
+    circuit_failure_threshold: int = 5
+    circuit_window_seconds: int = 30
+    circuit_degraded_ttl_seconds: int = 60
+
+    # Health probes — Beat task interval. Spec says 30s; bumped to 5min
+    # because free-tier providers have daily request caps and per-provider
+    # probes would consume a meaningful chunk of quota at 30s cadence.
+    health_probe_interval_seconds: int = 300
+    health_state_ttl_seconds: int = 900  # 15min — covers two missed probes
+
+    # Retry policy on 429s — exponential backoff within the same provider
+    # before falling through to the next provider in the chain.
+    retry_max_attempts_per_provider: int = 3
+    retry_initial_backoff_seconds: float = 1.0
+
+    # Cost meter — personal use, soft warning only.
+    daily_soft_limit_usd: float = 10.0
+    # HARD limit is the only thing that BLOCKS a request. Unset by default
+    # (no hard limit). Set to a number to enforce. The soft limit above
+    # logs a warning and shows a banner; it never refuses a request.
+    hard_daily_limit_usd: float | None = None
+
     @property
     def sync_database_url(self) -> str:
         """psycopg URL for Alembic migrations (sync driver)."""

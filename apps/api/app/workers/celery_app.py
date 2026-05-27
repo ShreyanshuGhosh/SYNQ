@@ -20,7 +20,12 @@ celery_app = Celery(
     "synq",
     broker=settings.redis_queue_url,
     backend=settings.redis_queue_url,
-    include=["app.workers.tasks", "app.workers.intelligence"],
+    include=[
+        "app.workers.tasks",
+        "app.workers.intelligence",
+        "app.workers.cost_meter",
+        "app.router.health_probes",
+    ],
 )
 
 celery_app.conf.update(
@@ -53,6 +58,13 @@ celery_app.conf.update(
         "noop_heartbeat": {
             "task": "app.workers.tasks.heartbeat",
             "schedule": crontab(minute="*/30"),
+        },
+        # Phase 5 — Provider health probes. Interval is configured via
+        # settings.health_probe_interval_seconds (default: 300s / 5min).
+        # Float schedule = "every N seconds" in Celery Beat.
+        "provider_health_probe": {
+            "task": "app.router.health_probes.probe_all_providers",
+            "schedule": float(settings.health_probe_interval_seconds),
         },
     },
 )

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { useAuth } from "@clerk/nextjs";
-import { useRouter, useParams } from "next/navigation";
+import { useRouter, useParams, usePathname } from "next/navigation";
 import { useChatStore } from "@/lib/store";
 import { createConversation, listConversations } from "@/lib/api";
 
@@ -10,6 +10,8 @@ export function ConversationSidebar() {
   const { getToken, isSignedIn } = useAuth();
   const router = useRouter();
   const params = useParams<{ id?: string }>();
+  const pathname = usePathname();
+  const onDashboard = pathname === "/dashboard";
   const conversations = useChatStore((s) => s.conversations);
   const setConversations = useChatStore((s) => s.setConversations);
   const prependConversation = useChatStore((s) => s.prependConversation);
@@ -56,7 +58,7 @@ export function ConversationSidebar() {
           <p className="px-2 py-4 text-xs text-gray-400">No conversations yet.</p>
         ) : (
           conversations.map((c) => {
-            const active = params?.id === c.id;
+            const active = !onDashboard && params?.id === c.id;
             return (
               <button
                 key={c.id}
@@ -72,6 +74,18 @@ export function ConversationSidebar() {
             );
           })
         )}
+        <div className="mt-3 border-t border-gray-200 pt-3">
+          <button
+            onClick={() => router.push("/dashboard")}
+            className={`block w-full rounded px-3 py-2 text-left text-sm ${
+              onDashboard
+                ? "bg-gray-200 font-medium"
+                : "text-gray-700 hover:bg-gray-100"
+            }`}
+          >
+            Dashboard
+          </button>
+        </div>
       </nav>
     </div>
   );

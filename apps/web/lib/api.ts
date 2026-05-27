@@ -235,6 +235,80 @@ export async function getFileStatus(
   return res.json();
 }
 
+// ── Phase 5 — Dashboard ─────────────────────────────────────────────────
+
+export type RouterChainEntry = { model: string; provider: string };
+export type RouterChainResponse = {
+  chain: RouterChainEntry[];
+  cost_aware_routing: boolean;
+  cost_aware_prompt_threshold: number;
+};
+
+export type ProviderHealth = {
+  provider: string;
+  status: "healthy" | "degraded" | "half_open" | "unhealthy" | "unknown";
+  latency_ms: number | null;
+  checked_at: number | null;
+  model_used: string | null;
+  error?: string;
+};
+
+export type LimitsResponse = {
+  daily_soft_limit_usd: number;
+  hard_daily_limit_usd: number | null;
+  today_usd_estimate: number;
+  hard_limit_blocked: boolean;
+  soft_warning_active: boolean;
+  price_table_models: string[];
+};
+
+export type StatsToday = {
+  today_cost_usd: number;
+  turns_today: number;
+  fallbacks_today: number;
+  manual_switches_today: number;
+  daily_soft_limit_usd: number;
+};
+
+export type DailyCostRow = { day: string | null; cost_usd: number; total_tokens: number };
+export type DailyCostResponse = { days: DailyCostRow[]; daily_soft_limit_usd: number };
+
+export type ProviderShareRow = { provider: string; cost_usd: number; pct: number; turns: number };
+export type ProviderShareResponse = { providers: ProviderShareRow[] };
+
+export type FallbackRow = {
+  ts: string | null;
+  fallback_from: string | null;
+  fallback_to: string | null;
+  fallback_reason: string | null;
+  conversation_id: string | null;
+  latency_ms: number | null;
+};
+export type FallbackResponse = { fallbacks: FallbackRow[] };
+
+export type HourlyTokenRow = { hour: string | null; prompt: number; completion: number };
+export type HourlyTokenResponse = { hours: HourlyTokenRow[] };
+
+async function getJson<T>(getToken: GetToken, path: string): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: await authHeaders(getToken),
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`${path}: ${res.status}`);
+  return res.json() as Promise<T>;
+}
+
+export const dash = {
+  routerChain: (t: GetToken) => getJson<RouterChainResponse>(t, "/api/router/chain"),
+  health: (t: GetToken) => getJson<{ providers: ProviderHealth[] }>(t, "/api/health/providers"),
+  limits: (t: GetToken) => getJson<LimitsResponse>(t, "/api/config/limits"),
+  statsToday: (t: GetToken) => getJson<StatsToday>(t, "/api/usage/stats/today"),
+  daily: (t: GetToken, days = 30) => getJson<DailyCostResponse>(t, `/api/usage/daily?days=${days}`),
+  providersMonth: (t: GetToken) => getJson<ProviderShareResponse>(t, "/api/usage/providers/month"),
+  fallbacks: (t: GetToken, limit = 20) => getJson<FallbackResponse>(t, `/api/usage/fallbacks?limit=${limit}`),
+  tokens: (t: GetToken, hours = 168) => getJson<HourlyTokenResponse>(t, `/api/usage/tokens?hours=${hours}`),
+};
+
 function parseSSEBlock(block: string): ChatEvent | null {
   let event = "message";
   const dataLines: string[] = [];
