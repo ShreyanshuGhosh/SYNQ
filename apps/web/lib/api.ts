@@ -251,7 +251,23 @@ export type ProviderHealth = {
   checked_at: number | null;
   model_used: string | null;
   error?: string;
+  // Phase 6 — last 5 probe outcomes, newest first.
+  history?: Array<{
+    status: string | null;
+    latency_ms: number | null;
+    checked_at: number | null;
+  }>;
 };
+
+// ── Phase 6 — Feature flags ─────────────────────────────────────────────
+export type FlagRow = {
+  name: string;
+  value: boolean;
+  default: boolean;
+  description: string;
+  env_var: string;
+};
+export type FlagsResponse = { flags: FlagRow[] };
 
 export type LimitsResponse = {
   daily_soft_limit_usd: number;
@@ -307,6 +323,7 @@ export const dash = {
   providersMonth: (t: GetToken) => getJson<ProviderShareResponse>(t, "/api/usage/providers/month"),
   fallbacks: (t: GetToken, limit = 20) => getJson<FallbackResponse>(t, `/api/usage/fallbacks?limit=${limit}`),
   tokens: (t: GetToken, hours = 168) => getJson<HourlyTokenResponse>(t, `/api/usage/tokens?hours=${hours}`),
+  flags: (t: GetToken) => getJson<FlagsResponse>(t, "/api/flags"),
 };
 
 function parseSSEBlock(block: string): ChatEvent | null {

@@ -382,6 +382,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
               role={m.role}
               text={extractText(m.content) + attachmentSummary(m.content)}
               meta={m}
+              conversationId={conversationId}
               switched={!!switchedTurnIds[m.id]}
               isPinned={pinnedIds.has(m.id)}
               onPin={async () => {
@@ -539,12 +540,36 @@ function UploadChip({
   );
 }
 
+const JAEGER_BASE = process.env.NEXT_PUBLIC_JAEGER_URL ?? "http://localhost:16686";
+
+function jaegerSearchUrl(conversationId: string, createdAt: string | null | undefined): string {
+  const tags = JSON.stringify({ conversation_id: conversationId });
+  const params = new URLSearchParams({
+    service: "context-switcher-api",
+    tags,
+  });
+  // Best-effort time window: +/- 30s around the message's created_at so
+  // Jaeger returns just the spans for THIS turn rather than the whole
+  // conversation's history.
+  if (createdAt) {
+    const t = Date.parse(createdAt);
+    if (!Number.isNaN(t)) {
+      const startUs = (t - 30_000) * 1000;
+      const endUs = (t + 30_000) * 1000;
+      params.set("start", String(startUs));
+      params.set("end", String(endUs));
+    }
+  }
+  return `${JAEGER_BASE}/search?${params.toString()}`;
+}
+
 function Bubble({
   role,
   text,
   pending,
   streaming,
   meta,
+  conversationId,
   switched,
   isPinned,
   onPin,
@@ -555,6 +580,7 @@ function Bubble({
   pending?: boolean;
   streaming?: boolean;
   meta?: Message;
+  conversationId?: string;
   switched?: boolean;
   isPinned?: boolean;
   onPin?: () => void;
@@ -562,6 +588,14 @@ function Bubble({
 }) {
   const isUser = role === "user";
   const canPin = !pending && !streaming && !!meta?.id && !!onPin;
+  // Phase 6 — show a trace icon on assistant bubbles only (the user
+  // message itself doesn't produce a backend span chain worth opening).
+  const canTrace =
+    !pending &&
+    !streaming &&
+    !isUser &&
+    !!conversationId &&
+    !!meta?.id;
   return (
     <div className={`group flex flex-col ${isUser ? "items-end" : "items-start"}`}>
       {switched && !isUser && meta?.model_used && (
@@ -579,8 +613,19 @@ function Bubble({
         >
           {text || (streaming ? "…" : "")}
           {meta?.model_used && !isUser ? (
-            <div className="mt-1 text-[10px] uppercase tracking-wide text-gray-400">
-              {meta.model_used}
+            <div className="mt-1 flex items-center gap-2 text-[10px] uppercase tracking-wide text-gray-400">
+              <span>{meta.model_used}</span>
+              {canTrace && (
+                <a
+                  href={jaegerSearchUrl(conversationId!, meta?.created_at ?? null)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="ml-1 inline-flex items-center rounded border border-gray-200 px-1 py-0 text-[10px] font-normal normal-case text-gray-500 hover:bg-gray-50 hover:text-gray-900"
+                  title="Open Jaeger traces for this turn"
+                >
+                  trace
+                </a>
+              )}
             </div>
           ) : null}
         </div>

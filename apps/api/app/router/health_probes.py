@@ -50,6 +50,10 @@ def _health_key(provider: str) -> str:
     return f"health:{provider}"
 
 
+def _history_key(provider: str) -> str:
+    return f"health:history:{provider}"
+
+
 def _pick_probe_model(provider: str, chain: list[str]) -> str | None:
     """Pick the cheapest registered model for a given provider.
 
@@ -152,9 +156,41 @@ async def _probe_all_async() -> dict[str, Any]:
                 json.dumps(result),
                 ex=settings.health_state_ttl_seconds,
             )
+            # Phase 6 — keep the last 5 probe outcomes for the dashboard
+            # dot-row rendering. LPUSH + LTRIM keeps the list bounded.
+            entry = json.dumps(
+                {
+                    "status": result.get("status"),
+                    "latency_ms": result.get("latency_ms"),
+                    "checked_at": result.get("checked_at"),
+                }
+            )
+            hkey = _history_key(provider)
+            await r.lpush(hkey, entry)
+            await r.ltrim(hkey, 0, 4)
+            await r.expire(hkey, settings.health_state_ttl_seconds * 4)
         except Exception:
             logger.exception("health probe: redis write failed for %s", provider)
     return results
+
+
+async def read_history(provider: str) -> list[dict[str, Any]]:
+    """Last 5 probe outcomes for ``provider``, newest first.
+
+    Missing key → empty list. Tolerant of malformed entries (drops them).
+    """
+    r = _redis()
+    try:
+        raw_entries = await r.lrange(_history_key(provider), 0, 4)
+    except Exception:
+        return []
+    out: list[dict[str, Any]] = []
+    for raw in raw_entries:
+        try:
+            out.append(json.loads(raw))
+        except Exception:
+            continue
+    return out
 
 
 @celery_app.task(name="app.router.health_probes.probe_all_providers")
@@ -204,5 +240,11 @@ async def read_all_health() -> list[dict[str, Any]]:
         breaker_state = await circuit_breaker.get_state(provider)
         if breaker_state.state in ("degraded", "half_open"):
             data["status"] = breaker_state.state
+        # Phase 6 — include the last 5 probe results so the UI can show
+        # a tiny dot-row indicating intermittent vs fully-down patterns.
+        try:
+            data["history"] = await read_history(provider)
+        except Exception:
+            data["history"] = []
         out.append(data)
     return out

@@ -15,17 +15,18 @@ Originals are NEVER deleted from S3. The worker only READS from S3.
 from __future__ import annotations
 
 import io
-import logging
 import traceback
 from typing import Any
 from uuid import UUID
 
+from app.core.logging import get_logger
 from app.storage import download_bytes, key_from_storage_url
 from app.workers.celery_app import celery_app
 from app.workers.db_sync import sync_session
 from app.workers.description import describe_image
 
-logger = logging.getLogger(__name__)
+log = get_logger(__name__)
+logger = log  # back-compat
 
 
 # Roughly 4 chars per token, matching the orchestrator's `_char_estimate`
@@ -82,13 +83,21 @@ def parse_file(self: Any, file_id: str, ext: str) -> dict[str, Any]:
                 setattr(row, k, v)
             row.parse_status = "done"
             row.error = None
-            logger.info(
-                "parse_file: file_id=%s ext=%s ok (text=%dchars chunks=%d desc=%s)",
-                uid,
-                ext,
-                len(text),
-                len(chunks),
-                "yes" if row.description else "no",
+            # Phase 6 — structured key event for grep-ability across the day.
+            pages = None
+            if ext == "pdf":
+                # pdfplumber's page count is the number of \n\n separators
+                # we wrote in _parse_pdf; cheaper than re-opening the PDF.
+                pages = max(1, (text.count("\n\n") + 1)) if text else 0
+            log.info(
+                "file.parse_complete",
+                file_id=str(uid),
+                mime_type=mime,
+                ext=ext,
+                pages=pages,
+                chars=len(text),
+                chunks_created=len(chunks),
+                has_description=bool(row.description),
             )
             # Phase 4: hand the chunks off to the embedder so the file
             # is searchable from the next turn onward. Triggered AFTER

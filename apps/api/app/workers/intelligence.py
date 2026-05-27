@@ -23,7 +23,6 @@ Per the Phase 4 spec:
 from __future__ import annotations
 
 import json
-import logging
 from datetime import timezone
 from typing import Any
 from uuid import UUID
@@ -31,12 +30,26 @@ from uuid import UUID
 import litellm
 
 from app.config import settings
+from app.core.logging import get_logger
+from app.core.tracing import get_tracer, set_attributes
 from app.embeddings import embed_one, embed_texts
 from app.vector_store import ensure_collections, upsert_file_chunks, upsert_message
 from app.workers.celery_app import celery_app
 from app.workers.db_sync import sync_session
 
-logger = logging.getLogger(__name__)
+log = get_logger(__name__)
+logger = log  # back-compat
+_tracer = get_tracer("app.workers.intelligence")
+
+
+def _current_span() -> Any:
+    """Best-effort handle to the active OTel span (Celery auto-instrumented)."""
+    try:
+        from opentelemetry import trace
+
+        return trace.get_current_span()
+    except Exception:
+        return None
 
 
 # ── Shared helpers ──────────────────────────────────────────────────────
@@ -141,6 +154,12 @@ def embed_message(self: Any, message_id: str) -> dict[str, Any]:
                 else None,
             )
             row.embedding_status = "done"
+            set_attributes(
+                _current_span(),
+                message_id=str(row.id),
+                embedding_model=settings.embedding_model,
+                vector_dim=settings.embedding_dim,
+            )
             return {"status": "done"}
         except Exception as exc:
             logger.exception("embed_message: id=%s failed", mid)
@@ -290,6 +309,12 @@ def update_rolling_summary(self: Any, conversation_id: str) -> dict[str, Any]:
 
         conv.rolling_summary = summary
         conv.summary_through_turn = older[-1].turn_index
+        set_attributes(
+            _current_span(),
+            conversation_id=str(cid),
+            turns_summarized=len(older),
+            summary_tokens=len(summary) // 4,
+        )
         return {
             "status": "updated",
             "through_turn": older[-1].turn_index,
@@ -400,6 +425,11 @@ def extract_facts(self: Any, conversation_id: str) -> dict[str, Any]:
 
         merged = _merge_facts(dict(conv.extracted_facts or {}), new_facts)
         conv.extracted_facts = merged
+        set_attributes(
+            _current_span(),
+            conversation_id=str(cid),
+            facts_updated=list(merged.keys()),
+        )
         return {"status": "updated", "fields": list(merged.keys())}
 
 

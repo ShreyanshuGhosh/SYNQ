@@ -13,8 +13,23 @@ from __future__ import annotations
 
 from celery import Celery
 from celery.schedules import crontab
+from celery.signals import worker_process_init
 
 from app.config import settings
+from app.core.logging import configure_logging
+from app.core.tracing import configure_celery_tracing
+
+
+@worker_process_init.connect
+def _bootstrap_worker(*args, **kwargs):  # type: ignore[no-untyped-def]
+    """Per-worker init — set up JSON logging + OTel tracing on each fork.
+
+    Runs once per worker process. The solo pool fires this on celery boot;
+    the prefork pool fires it on every worker fork. Idempotent so either
+    pool model is fine.
+    """
+    configure_logging()
+    configure_celery_tracing()
 
 celery_app = Celery(
     "synq",

@@ -33,8 +33,6 @@ survives — this is a hard constraint from Phase 5.
 
 from __future__ import annotations
 
-import json
-import logging
 import time
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -42,8 +40,10 @@ from typing import Any, Literal
 import redis.asyncio as redis
 
 from app.config import settings
+from app.core.logging import get_logger
 
-logger = logging.getLogger(__name__)
+log = get_logger(__name__)
+logger = log  # back-compat
 
 
 CircuitState = Literal["healthy", "degraded", "half_open"]
@@ -76,14 +76,30 @@ def _degraded_key(provider: str) -> str:
     return f"circuit:{provider}:degraded"
 
 
+_TRANSITION_TO_STATES = {
+    "degraded": ("healthy", "degraded"),
+    "degraded_extended": ("degraded", "degraded"),
+    "recovered": ("degraded", "healthy"),
+}
+
+
 def _log(transition: str, provider: str, **fields: Any) -> None:
     """Single log site for state transitions — invaluable in postmortems.
 
-    Fields are emitted as a structured dict-ish suffix so a future log
-    shipper (Phase 6) can json-parse them. Plain stdlib logging today.
+    Phase 6: emit a structured ``circuit_breaker.state_change`` event so the
+    operator can grep for any breaker flip without reading prose log lines.
     """
-    payload = {"provider": provider, "transition": transition, **fields}
-    logger.warning("circuit_breaker %s", json.dumps(payload, default=str))
+    old_state, new_state = _TRANSITION_TO_STATES.get(
+        transition, ("unknown", "unknown")
+    )
+    log.warning(
+        "circuit_breaker.state_change",
+        provider=provider,
+        transition=transition,
+        old_state=old_state,
+        new_state=new_state,
+        **fields,
+    )
 
 
 async def record_failure(provider: str) -> BreakerState:

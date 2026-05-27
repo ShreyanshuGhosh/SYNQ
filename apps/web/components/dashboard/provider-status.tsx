@@ -11,6 +11,13 @@ const DOT_CLASS: Record<ProviderHealth["status"], string> = {
   unknown: "bg-gray-400",
 };
 
+function historyDotClass(status: string | null | undefined): string {
+  if (status === "healthy") return "bg-emerald-500";
+  if (status === "half_open") return "bg-amber-500";
+  if (status === "unhealthy" || status === "degraded") return "bg-red-500";
+  return "bg-gray-400";
+}
+
 function relativeSince(checkedAt: number | null): string {
   if (!checkedAt) return "no data";
   const ms = Date.now() - checkedAt * 1000;
@@ -35,26 +42,52 @@ export function ProviderStatus({ providers }: Props) {
           <p className="text-sm text-gray-500">No providers configured.</p>
         )}
         <ul className="space-y-2">
-          {providers.map((p) => (
-            <li
-              key={p.provider}
-              className="flex items-center justify-between rounded-md border border-gray-100 px-3 py-2 dark:border-gray-800"
-            >
-              <div className="flex items-center gap-3">
-                <span className={`inline-block h-3 w-3 rounded-full ${DOT_CLASS[p.status]}`} />
-                <div>
-                  <div className="text-sm font-medium">{p.provider}</div>
-                  <div className="text-xs text-gray-500">
-                    {p.model_used ?? "—"} · {p.status}
+          {providers.map((p) => {
+            // Newest first from the API; pad with grey dots so every row
+            // always shows exactly 5 slots — easier to spot a pattern.
+            const history = (p.history ?? []).slice(0, 5);
+            const padded = [
+              ...history,
+              ...Array.from({ length: Math.max(0, 5 - history.length) }, () => ({
+                status: null,
+                latency_ms: null,
+                checked_at: null,
+              })),
+            ];
+            return (
+              <li
+                key={p.provider}
+                className="flex items-center justify-between rounded-md border border-gray-100 px-3 py-2 dark:border-gray-800"
+              >
+                <div className="flex items-center gap-3">
+                  <span className={`inline-block h-3 w-3 rounded-full ${DOT_CLASS[p.status]}`} />
+                  <div>
+                    <div className="text-sm font-medium">{p.provider}</div>
+                    <div className="text-xs text-gray-500">
+                      {p.model_used ?? "—"} · {p.status}
+                    </div>
                   </div>
                 </div>
-              </div>
-              <div className="text-right text-xs text-gray-500">
-                <div>{p.latency_ms != null ? `${p.latency_ms}ms` : "—"}</div>
-                <div>{relativeSince(p.checked_at)}</div>
-              </div>
-            </li>
-          ))}
+                <div className="flex flex-col items-end gap-1">
+                  <div
+                    className="flex items-center gap-1"
+                    title="Last 5 probe results (newest on the left)"
+                  >
+                    {padded.map((h, i) => (
+                      <span
+                        key={i}
+                        className={`inline-block h-1.5 w-1.5 rounded-full ${historyDotClass(h.status)}`}
+                      />
+                    ))}
+                  </div>
+                  <div className="text-right text-xs text-gray-500">
+                    <span>{p.latency_ms != null ? `${p.latency_ms}ms` : "—"}</span>
+                    <span className="ml-2">{relativeSince(p.checked_at)}</span>
+                  </div>
+                </div>
+              </li>
+            );
+          })}
         </ul>
       </CardContent>
     </Card>

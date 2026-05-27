@@ -23,7 +23,6 @@ Phase 4 changes:
 
 from __future__ import annotations
 
-import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
@@ -35,10 +34,27 @@ from app.adapters import ProviderAdapter, adapter_for, provider_for
 from app.adapters.base import ResolvedFile, StreamEvent
 from app.context_engine import BuiltContext, build_context
 from app.context_resolver import resolve_files_for_turn
+from app.core.logging import get_logger
+from app.core.tracing import get_tracer, set_attributes
 from app.db import SessionLocal
-from app.models import Message
+from app.models import FileRefBlock, ImageBlock, Message
 
-logger = logging.getLogger(__name__)
+log = get_logger(__name__)
+logger = log  # back-compat
+_tracer = get_tracer("app.orchestrator")
+
+
+def _content_flags(messages: list[Message]) -> tuple[bool, bool]:
+    """Quick scan: does the message list contain image or file blocks?"""
+    has_images = False
+    has_files = False
+    for m in messages:
+        for b in m.content:
+            if isinstance(b, ImageBlock):
+                has_images = True
+            elif isinstance(b, FileRefBlock):
+                has_files = True
+    return has_images, has_files
 
 
 @dataclass
@@ -105,7 +121,25 @@ async def plan_turn(
     messages = built.messages
 
     resolved_files = await resolve_files_for_turn(messages, adapter, user_id=user_id)
-    wire_request = await adapter.translate_messages(messages, resolved_files)
+
+    # Phase 6 — adapter.translate_messages span. Attributes per the spec:
+    # provider, message_count, has_images, has_files.
+    has_images, has_files = _content_flags(messages)
+    translate_span = _tracer.start_span("adapter.translate_messages")
+    set_attributes(
+        translate_span,
+        provider=adapter.provider,
+        message_count=len(messages),
+        has_images=has_images,
+        has_files=has_files,
+    )
+    try:
+        wire_request = await adapter.translate_messages(messages, resolved_files)
+    finally:
+        try:
+            translate_span.end()
+        except Exception:
+            pass
 
     # "Truncated" semantics carried over from Phase 2 for SSE consumers:
     # if compression ran (i.e. not passthrough), older turns are no
@@ -114,8 +148,12 @@ async def plan_turn(
     dropped = 0
     if not built.passthrough:
         from app.config import settings as _s
+        from app.core.flags import flag as _flag
 
-        verbatim_n = _s.verbatim_window_turns
+        # Mirror the context_engine.build_context window resolution so
+        # the "dropped" count reported to the SSE client matches what
+        # actually got compressed when compression_v2 is on.
+        verbatim_n = 8 if _flag("compression_v2") else _s.verbatim_window_turns
         dropped = max(0, len(history) - verbatim_n)
 
     return TurnPlan(
@@ -140,16 +178,64 @@ async def run_turn(plan: TurnPlan) -> AsyncIterator[StreamEvent]:
     Yields canonical StreamEvents. Routers consume these and translate
     to SSE — that translation is the only place we touch HTTP shapes.
     """
+    # Phase 6 — adapter.validate span.
+    validate_span = _tracer.start_span("adapter.validate")
+    set_attributes(validate_span, provider=plan.provider)
     validation = await plan.adapter.validate(plan.wire_request)
+    set_attributes(
+        validate_span,
+        passed=validation.ok,
+        failure_reason="; ".join(validation.errors) if validation.errors else None,
+    )
+    try:
+        validate_span.end()
+    except Exception:
+        pass
     if not validation.ok:
+        reason = "; ".join(validation.errors)
+        log.warning(
+            "context_engine.validation_failed",
+            provider=plan.provider,
+            reason=reason,
+        )
         yield StreamEvent(
             type="error",
-            content=f"validation_failed: {'; '.join(validation.errors)}",
+            content=f"validation_failed: {reason}",
         )
         return
 
-    async for event in await plan.adapter.stream_completion(plan.wire_request):
-        yield event
+    # Phase 6 — adapter.stream_completion span. We close it after the
+    # final canonical event so latency_ms covers the full provider call.
+    import time
+
+    stream_span = _tracer.start_span("adapter.stream_completion")
+    set_attributes(
+        stream_span,
+        provider=plan.provider,
+        model=plan.model,
+        was_fallback=False,  # set later by fallback wrapper if applicable
+    )
+    started = time.perf_counter()
+    prompt_tokens = 0
+    completion_tokens = 0
+    try:
+        async for event in await plan.adapter.stream_completion(plan.wire_request):
+            if event.type == "stop" and isinstance(event.usage, dict):
+                prompt_tokens = int(event.usage.get("prompt_tokens", 0) or 0)
+                completion_tokens = int(event.usage.get("completion_tokens", 0) or 0)
+            yield event
+    finally:
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        set_attributes(
+            stream_span,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            latency_ms=latency_ms,
+        )
+        try:
+            stream_span.end()
+        except Exception:
+            pass
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────

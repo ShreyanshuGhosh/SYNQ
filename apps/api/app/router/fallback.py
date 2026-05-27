@@ -37,7 +37,6 @@ us unit-test the fallback policy without dragging FastAPI in.
 from __future__ import annotations
 
 import asyncio
-import logging
 import re
 import time
 from collections.abc import AsyncIterator
@@ -47,11 +46,13 @@ from uuid import UUID
 
 from app.adapters.base import StreamEvent
 from app.config import settings
+from app.core.logging import get_logger
 from app.orchestrator import TurnPlan, plan_turn, run_turn
 from app.router import circuit_breaker
 from app.router.provider_router import route as route_chain
 
-logger = logging.getLogger(__name__)
+log = get_logger(__name__)
+logger = log  # back-compat
 
 
 ErrorClass = Literal[
@@ -229,6 +230,14 @@ async def run_with_fallback(
         ),
     )
 
+    log.info(
+        "turn.started",
+        conversation_id=str(conversation_id) if conversation_id else None,
+        model=plan.model,
+        provider=plan.provider,
+        prompt_tokens=plan.prompt_token_estimate,
+    )
+
     # Always surface the plan-level events the existing UI consumes.
     if plan.drift_detected:
         yield (
@@ -321,6 +330,14 @@ async def run_with_fallback(
                     await circuit_breaker.record_success(plan.provider)
                 except Exception:
                     logger.exception("breaker: record_success failed")
+                log.info(
+                    "turn.completed",
+                    conversation_id=str(conversation_id) if conversation_id else None,
+                    model=plan.model,
+                    provider=plan.provider,
+                    latency_ms=result_obj.latency_ms,
+                    was_fallback=summary.was_fallback,
+                )
                 yield ("attempt_summary", summary)
                 return
 
@@ -439,6 +456,13 @@ async def run_with_fallback(
             summary.was_fallback = True
             summary.fallback_from = plan.provider
             summary.fallback_reason = last_error_class
+            log.warning(
+                "provider.fallback",
+                from_provider=plan.provider,
+                to_provider=to_model,
+                reason=last_error_class,
+                conversation_id=str(conversation_id) if conversation_id else None,
+            )
             yield (
                 "provider_switched",
                 {

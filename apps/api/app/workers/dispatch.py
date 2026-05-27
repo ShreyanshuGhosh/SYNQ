@@ -14,12 +14,13 @@ trigger decision a single readable expression at the call site.
 
 from __future__ import annotations
 
-import logging
 from uuid import UUID
 
 from app.config import settings
+from app.core.logging import get_logger
 
-logger = logging.getLogger(__name__)
+log = get_logger(__name__)
+logger = log  # back-compat
 
 
 def trigger_embed_message(message_id: UUID) -> None:

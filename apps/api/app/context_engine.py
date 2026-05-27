@@ -32,7 +32,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -40,6 +39,9 @@ from uuid import UUID
 
 from app.adapters import ProviderAdapter, adapter_for
 from app.config import settings
+from app.core.flags import flag
+from app.core.logging import get_logger
+from app.core.tracing import get_tracer, set_attributes
 from app.embeddings import aembed_one
 from app.models import (
     ContentBlock,
@@ -52,7 +54,19 @@ from app.models import (
 )
 from app.vector_store import SearchHit, ensure_collections, search_messages
 
-logger = logging.getLogger(__name__)
+log = get_logger(__name__)
+logger = log  # back-compat: existing code uses ``logger.exception(...)``
+_tracer = get_tracer("app.context_engine")
+
+
+def _end_span(span: Any) -> None:
+    """Best-effort span end. Tolerant of the no-op tracer."""
+    if span is None:
+        return
+    try:
+        span.end()
+    except Exception:
+        pass
 
 
 SYSTEM_PROMPT_TEMPLATE = (
@@ -252,10 +266,45 @@ async def build_context(
     pinned_context = list(pinned_context or [])
     extracted_facts = dict(extracted_facts or {})
 
+    # ── Phase 6 — feature-flag tuning ────────────────────────────────
+    # compression_v2: tighter verbatim window + more RAG chunks. The
+    # context engine uses these resolved values throughout the build.
+    verbatim_n = settings.verbatim_window_turns
+    rag_k = settings.rag_top_k
+    if flag("compression_v2"):
+        verbatim_n = 8
+        rag_k = 12
+
+    # The Phase 6 spec asks for a custom "context_engine.build" span with
+    # rich attributes. We open the span manually (rather than wrapping the
+    # whole function in a ``with`` block) so the existing function body
+    # keeps its indentation; ``_finish_span`` sets the final attrs at every
+    # return site.
+    build_span = _tracer.start_span("context_engine.build")
+    set_attributes(
+        build_span,
+        conversation_id=str(conversation_id) if conversation_id else None,
+        target_model=target_model,
+        provider=adapter.provider,
+        total_messages=len(history),
+        verbatim_window_turns=verbatim_n,
+        rag_top_k=rag_k,
+        compression_v2=flag("compression_v2"),
+        aggressive_rag=flag("aggressive_rag"),
+    )
+
     # ── Fast path: small enough → passthrough ───────────────────────
     char_est = _char_estimate_messages(history)
-    if char_est <= threshold:
+    fits_without_compression = char_est <= threshold
+    set_attributes(
+        build_span,
+        fits_without_compression=fits_without_compression,
+        total_tokens_before=char_est,
+    )
+    if fits_without_compression:
         msgs = _maybe_prepend_drift(history, drift_detected)
+        set_attributes(build_span, total_tokens_after=char_est, passthrough=True)
+        _end_span(build_span)
         return BuiltContext(
             messages=msgs,
             sections=[
@@ -274,13 +323,24 @@ async def build_context(
 
     # ── Compression assembly ────────────────────────────────────────
 
+    # Compression actually kicked in — log it so the operator can grep
+    # for "compression.triggered" across the day.
+    log.info(
+        "compression.triggered",
+        conversation_id=str(conversation_id) if conversation_id else None,
+        tokens_before=char_est,
+        strategy="compression_v2" if flag("compression_v2") else "default",
+        verbatim_window_turns=verbatim_n,
+        rag_top_k=rag_k,
+    )
+
     sections: list[SectionInfo] = []
     rag_debug: list[RagDebug] = []
 
     # The verbatim slot is the last N turns. The "current user message"
     # is the last entry of history; we keep it in the verbatim slot too
     # since the spec keeps last 10-20 turns as the immediate context.
-    verbatim_n = settings.verbatim_window_turns
+    # (verbatim_n already resolved above with feature-flag tuning.)
     verbatim_messages = history[-verbatim_n:] if history else []
     older_messages = history[:-verbatim_n] if len(history) > verbatim_n else []
     excluded_turns = {m.turn_index for m in verbatim_messages}
@@ -364,6 +424,12 @@ async def build_context(
     ):
         query_text = _message_text(user_message)
         if query_text:
+            rag_span = _tracer.start_span("context_engine.rag_retrieve")
+            set_attributes(
+                rag_span,
+                query_tokens=len(query_text) // _CHARS_PER_TOKEN,
+                top_k=rag_k,
+            )
             try:
                 ensure_collections()
                 query_vec = await aembed_one(query_text)
@@ -371,12 +437,57 @@ async def build_context(
                     search_messages,
                     query_vector=query_vec,
                     conversation_id=str(conversation_id),
-                    top_k=settings.rag_top_k,
+                    top_k=rag_k,
                     exclude_turn_indices=excluded_turns,
                 )
             except Exception:
-                logger.exception("context_engine: RAG retrieval failed; skipping")
+                logger.exception(
+                    "rag.retrieve_failed",
+                    conversation_id=str(conversation_id),
+                )
                 hits = []
+            # Phase 6 — aggressive_rag: also embed the rolling summary and
+            # do a second retrieval pass against it. Merge results by
+            # score (highest first), dedupe by (turn_index, role).
+            if flag("aggressive_rag") and rolling_summary:
+                try:
+                    summary_vec = await aembed_one(rolling_summary)
+                    summary_hits = await asyncio.to_thread(
+                        search_messages,
+                        query_vector=summary_vec,
+                        conversation_id=str(conversation_id),
+                        top_k=max(2, rag_k // 2),
+                        exclude_turn_indices=excluded_turns,
+                    )
+                except Exception:
+                    summary_hits = []
+                if summary_hits:
+                    seen = {
+                        (h.payload.get("turn_index"), h.payload.get("role"))
+                        for h in hits
+                    }
+                    for sh in summary_hits:
+                        key = (sh.payload.get("turn_index"), sh.payload.get("role"))
+                        if key in seen:
+                            continue
+                        hits.append(sh)
+                        seen.add(key)
+                    hits.sort(key=lambda h: h.score, reverse=True)
+                    hits = hits[:rag_k]
+            top_score = hits[0].score if hits else 0.0
+            set_attributes(
+                rag_span,
+                chunks_retrieved=len(hits),
+                top_score=float(top_score),
+                aggressive_rag=flag("aggressive_rag"),
+            )
+            _end_span(rag_span)
+            log.info(
+                "rag.retrieved",
+                conversation_id=str(conversation_id),
+                chunks_found=len(hits),
+                top_score=float(top_score),
+            )
             if hits:
                 rag_body = _format_rag_hits(hits)
                 rag_msg = _synthetic(
@@ -485,6 +596,14 @@ async def build_context(
         out = _maybe_prepend_drift(out, drift_detected)
 
     total_estimate = _char_estimate_messages(out)
+
+    set_attributes(
+        build_span,
+        total_tokens_after=total_estimate,
+        passthrough=False,
+        rag_hits=len(rag_debug),
+    )
+    _end_span(build_span)
 
     return BuiltContext(
         messages=out,

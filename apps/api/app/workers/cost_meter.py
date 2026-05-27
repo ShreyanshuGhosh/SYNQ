@@ -26,18 +26,29 @@ Soft vs hard limit (Phase 5 personal-use ruleset):
 
 from __future__ import annotations
 
-import logging
 from datetime import date, datetime, time as dtime, timezone
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 import redis
 
 from app.config import settings
+from app.core.logging import get_logger
 from app.workers.celery_app import celery_app
 from app.workers.db_sync import sync_session
 
-logger = logging.getLogger(__name__)
+log = get_logger(__name__)
+logger = log  # back-compat
+
+
+def _current_span() -> Any:
+    try:
+        from opentelemetry import trace
+
+        return trace.get_current_span()
+    except Exception:
+        return None
 
 
 # ── Price table ─────────────────────────────────────────────────────────
@@ -190,6 +201,16 @@ def meter_usage(
         )
         row.cost_usd = cost
         s.commit()
+
+    # Phase 6 — surface the cost in the worker's auto-instrumented span.
+    span = _current_span()
+    if span is not None:
+        try:
+            span.set_attribute("message_id", message_id)
+            span.set_attribute("model", model or "unknown")
+            span.set_attribute("cost_usd", float(cost))
+        except Exception:
+            pass
 
     _maybe_warn_soft_limit()
 

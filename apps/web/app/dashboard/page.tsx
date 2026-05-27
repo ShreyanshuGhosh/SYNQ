@@ -6,6 +6,7 @@ import {
   dash,
   type DailyCostResponse,
   type FallbackResponse,
+  type FlagsResponse,
   type HourlyTokenResponse,
   type LimitsResponse,
   type ProviderHealth,
@@ -19,6 +20,7 @@ import { ProviderDonut } from "@/components/dashboard/provider-donut";
 import { ProviderStatus } from "@/components/dashboard/provider-status";
 import { FallbacksTable } from "@/components/dashboard/fallbacks-table";
 import { TokensChart } from "@/components/dashboard/tokens-chart";
+import { FlagsPanel } from "@/components/dashboard/flags-panel";
 
 export default function DashboardPage() {
   const { getToken, isSignedIn } = useAuth();
@@ -34,6 +36,7 @@ export default function DashboardPage() {
   const [health, setHealth] = useState<ProviderHealth[]>([]);
   const [fallbacks, setFallbacks] = useState<FallbackResponse | null>(null);
   const [tokens, setTokens] = useState<HourlyTokenResponse | null>(null);
+  const [flags, setFlags] = useState<FlagsResponse | null>(null);
   const [providerFilter, setProviderFilter] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,7 +45,7 @@ export default function DashboardPage() {
     setLoading(true);
     setError(null);
     try {
-      const [s, l, c, d, p, h, fb, tk] = await Promise.all([
+      const [s, l, c, d, p, h, fb, tk, fl] = await Promise.all([
         dash.statsToday(t),
         dash.limits(t),
         dash.routerChain(t),
@@ -51,6 +54,7 @@ export default function DashboardPage() {
         dash.health(t),
         dash.fallbacks(t, 20),
         dash.tokens(t, 168),
+        dash.flags(t),
       ]);
       setStats(s);
       setLimits(l);
@@ -60,6 +64,7 @@ export default function DashboardPage() {
       setHealth(h.providers);
       setFallbacks(fb);
       setTokens(tk);
+      setFlags(fl);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -172,6 +177,9 @@ export default function DashboardPage() {
 
       {/* Panel F — full width */}
       <TokensChart data={tokens} />
+
+      {/* Panel G — Feature flags (Phase 6) */}
+      <FlagsPanel data={flags} />
     </div>
   );
 }

@@ -84,6 +84,18 @@ services:
       timeout: 20s
       retries: 3
 
+  # Phase 6 — distributed tracing UI for the API + Celery workers.
+  # All-in-one image bundles the collector + UI; OTLP gRPC on 4317,
+  # web UI on 16686. Free, no auth, localhost-only.
+  jaeger:
+    image: jaegertracing/all-in-one:1.57
+    restart: unless-stopped
+    ports:
+      - "16686:16686"   # Jaeger UI
+      - "4317:4317"     # OTLP gRPC ingest
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+
   # One-shot bootstrap: ensures the synq-files bucket exists with
   # private ACL so the API can write without first touching the console.
   minio_bootstrap:
