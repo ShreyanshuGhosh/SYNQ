@@ -102,6 +102,17 @@ export async function updateConversation(
   return res.json();
 }
 
+export async function deleteConversation(
+  getToken: GetToken,
+  id: string,
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/conversations/${id}`, {
+    method: "DELETE",
+    headers: await authHeaders(getToken),
+  });
+  if (!res.ok) throw new Error(`deleteConversation: ${res.status}`);
+}
+
 export async function* sendMessageStream(
   getToken: GetToken,
   conversationId: string,

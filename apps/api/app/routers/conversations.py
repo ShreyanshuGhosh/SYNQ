@@ -219,6 +219,27 @@ async def update_conversation(
     return ConversationModel.model_validate(conv)
 
 
+# ── DELETE: archive conversation ────────────────────────────────────────
+
+
+@router.delete("/{conv_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_conversation(
+    conv_id: UUID,
+    user: AuthenticatedUser = Depends(enforce_rate_limit),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    """Soft-delete a conversation by stamping ``archived_at``.
+
+    Archived rows are filtered out of every read path (list/get/send),
+    so the conversation disappears from the UI while history is retained
+    for analytics/audit. A second delete is a no-op (the row is already
+    invisible to ``_load_owned_conversation`` and returns 404)."""
+    conv = await _load_owned_conversation(session, conv_id, user.id)
+    conv.archived_at = func.now()
+    conv.version = (conv.version or 0) + 1
+    await session.commit()
+
+
 # ── Pinning (Phase 4) ───────────────────────────────────────────────────
 
 

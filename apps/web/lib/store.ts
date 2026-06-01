@@ -43,6 +43,8 @@ interface ChatState {
   setModels: (models: ModelInfo[], defaultModel: string) => void;
   setMessages: (rows: Message[]) => void;
   prependConversation: (c: Conversation) => void;
+  renameConversation: (id: string, title: string) => void;
+  removeConversation: (id: string) => void;
 
   beginSend: (text: string) => void;
   appendStreamToken: (text: string) => void;
@@ -93,6 +95,16 @@ export const useChatStore = create<ChatState>((set) => ({
     })),
   prependConversation: (c) =>
     set((s) => ({ conversations: [c, ...s.conversations] })),
+  renameConversation: (id, title) =>
+    set((s) => ({
+      conversations: s.conversations.map((c) =>
+        c.id === id ? { ...c, title } : c,
+      ),
+    })),
+  removeConversation: (id) =>
+    set((s) => ({
+      conversations: s.conversations.filter((c) => c.id !== id),
+    })),
 
   beginSend: (text) =>
     set({
