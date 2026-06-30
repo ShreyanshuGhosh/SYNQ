@@ -36,7 +36,9 @@ def _client() -> "boto3.session.Session.client":  # type: ignore[name-defined]
         aws_access_key_id=settings.s3_access_key,
         aws_secret_access_key=settings.s3_secret_key,
         config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
-        region_name="us-east-1",  # MinIO ignores this; R2/S3 need something.
+        # MinIO/R2 ignore the region; Supabase validates it in the SigV4
+        # signature, so it must match the project region (settings.s3_region).
+        region_name=settings.s3_region,
     )
 
 

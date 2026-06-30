@@ -265,7 +265,10 @@ and it's all on free tiers.
 ### Alternative to Cloudflare R2 (no card)
 
 If you don't want to add a card to Cloudflare, use **Supabase Storage**
-(S3-compatible, free, no card): create a Supabase project → Storage → enable
-the S3 endpoint, create a `synq-files` bucket, and use its S3 endpoint +
-access keys for `S3_ENDPOINT` / `S3_ACCESS_KEY` / `S3_SECRET_KEY`. The code
-path is identical (it's all S3 v4 + path-style).
+(S3-compatible, free, no card): create a Supabase project → **Storage** →
+create a bucket named `synq-files` → **Project Settings → Storage → S3
+Connection**: copy the **endpoint** (`https://<ref>.storage.supabase.co/storage/v1/s3`)
+and the **region**, then create **S3 access keys** there. Map them to
+`S3_ENDPOINT` / `S3_REGION` / `S3_ACCESS_KEY` / `S3_SECRET_KEY`. The
+`S3_REGION` **must** match the project region (Supabase validates it in the
+request signature). The code path is otherwise identical (S3 v4, path-style).

@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     s3_access_key: str = "synq_minio"
     s3_secret_key: str = "synq_minio_password"
     s3_bucket: str = "synq-files"
+    # S3 region used for SigV4 signing. MinIO/R2 ignore it (any value works),
+    # but Supabase Storage validates it against the project's region — set
+    # S3_REGION to your Supabase project region (e.g. ap-southeast-1) there.
+    s3_region: str = "us-east-1"
     secret_key: str = "change-me-in-production"
     environment: str = "development"
     cors_origins: list[str] = ["http://localhost:3000"]

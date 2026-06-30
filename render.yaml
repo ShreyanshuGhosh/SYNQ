@@ -59,6 +59,10 @@ services:
         sync: false
       - key: S3_BUCKET
         value: synq-files
+      # Supabase: set to your project region (e.g. ap-southeast-1).
+      # R2/MinIO: any value works (they ignore it).
+      - key: S3_REGION
+        sync: false
 
       # --- Vector DB (Qdrant Cloud) ---
       - key: QDRANT_URL
