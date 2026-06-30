@@ -47,7 +47,9 @@ app.include_router(dashboard.router)
 app.include_router(flags.router)
 
 
-@app.get("/health")
+# GET + HEAD so uptime monitors (UptimeRobot defaults to HEAD) get a 2xx
+# instead of a 405. Both return the same lightweight body.
+@app.api_route("/health", methods=["GET", "HEAD"])
 async def health() -> dict[str, str]:
     return {"status": "ok"}
 
