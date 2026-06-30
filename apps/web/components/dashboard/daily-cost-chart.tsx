@@ -52,7 +52,7 @@ export function DailyCostChart({ data, providerFilter }: Props) {
                     ? [`$${value.toFixed(4)}`, "Cost"]
                     : [value.toLocaleString(), name === "total_tokens" ? "Tokens" : name]
                 }
-                labelStyle={{ color: "#111" }}
+                labelStyle={{ color: "#e2e8f0" }}
                 contentStyle={{ fontSize: 12 }}
               />
               <Bar dataKey="cost_usd">
@@ -64,7 +64,7 @@ export function DailyCostChart({ data, providerFilter }: Props) {
           </ResponsiveContainer>
         </div>
         {providerFilter && (
-          <p className="mt-2 text-[11px] text-gray-500">
+          <p className="mt-2 text-[11px] text-slate-500">
             *Provider filter is client-side and approximate — bars currently show total cost.
           </p>
         )}

@@ -66,7 +66,7 @@ export function ProviderDonut({ data, onSelectProvider, selectedProvider }: Prop
           </ResponsiveContainer>
         </div>
         {selectedProvider && (
-          <p className="mt-1 text-[11px] text-gray-500">
+          <p className="mt-1 text-[11px] text-slate-500">
             Filtering Panel B by {selectedProvider} — click slice again to clear.
           </p>
         )}

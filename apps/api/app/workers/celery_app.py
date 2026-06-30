@@ -44,6 +44,14 @@ celery_app = Celery(
 )
 
 celery_app.conf.update(
+    # Memory-constrained free hosting (Render free, 512MB) can't run a
+    # second worker process without risking OOM. CELERY_EAGER=true makes
+    # `.delay()` execute the task synchronously in the API process instead.
+    # eager_propagates stays False so a failing background task (embed,
+    # parse, summary) surfaces as a logged EagerResult error rather than
+    # bubbling up and breaking the live request that triggered it.
+    task_always_eager=settings.celery_eager,
+    task_eager_propagates=False,
     # Windows does not support billiard's prefork pool (shared-memory
     # semaphores raise PermissionError). Use `solo` so `celery worker`
     # works without flags. On Linux/macOS in prod, override with

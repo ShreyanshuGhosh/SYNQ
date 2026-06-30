@@ -7,6 +7,11 @@ class Settings(BaseSettings):
     database_url: str = "postgresql://synq:synq_dev_password@localhost:5432/synq_dev"
     redis_url: str = "redis://localhost:6379/0"
     redis_queue_url: str = "redis://localhost:6380/0"
+    # When true, Celery tasks run synchronously in-process instead of going
+    # to a separate worker. Used on memory-constrained free hosting (Render
+    # free tier, 512MB) where running a second worker process risks OOM.
+    # Off by default so local dev keeps the real broker + worker behavior.
+    celery_eager: bool = False
     s3_endpoint: str = "http://localhost:9000"
     s3_access_key: str = "synq_minio"
     s3_secret_key: str = "synq_minio_password"

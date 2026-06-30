@@ -1,0 +1,14 @@
+# Keep the build context small + the image clean.
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+tests/
+.env
+.env.*
+!.env.example
+celerybeat-schedule
+*.sqlite3
+.git/

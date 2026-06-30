@@ -1,0 +1,95 @@
+# Render Blueprint — provisions the SYNQ API + a free Key Value (Redis)
+# instance in one shot. The web frontend lives on Vercel, the databases on
+# Neon / Qdrant Cloud / Cloudflare R2 (all free) — see DEPLOY.md.
+#
+# In the Render dashboard: New → Blueprint → pick this repo. Render reads
+# this file, creates both services, and prompts you for every env var
+# marked `sync: false` below (the secrets it can't generate for you).
+
+services:
+  # ── API (FastAPI + in-process Celery) ──────────────────────────────
+  - type: web
+    name: synq-api
+    runtime: docker
+    plan: free
+    rootDir: apps/api
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    # Render auto-deploys on every push to this branch.
+    branch: master
+    envVars:
+      # --- App ---
+      - key: ENVIRONMENT
+        value: production
+      - key: SECRET_KEY
+        generateValue: true # Render generates a strong random value
+      # Run background jobs in-process so we fit the free 512MB box.
+      - key: CELERY_EAGER
+        value: "true"
+      # CORS — the exact origin(s) of your Vercel site, as a JSON array.
+      # Fill this in AFTER the Vercel deploy gives you a URL.
+      # Example: ["https://synq-web.vercel.app"]
+      - key: CORS_ORIGINS
+        sync: false
+
+      # --- Redis (provisioned below; eager mode means the queue URL is
+      #     present for config but the broker stays idle) ---
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: synq-redis
+          property: connectionString
+      - key: REDIS_QUEUE_URL
+        fromService:
+          type: keyvalue
+          name: synq-redis
+          property: connectionString
+
+      # --- Postgres (Neon) ---
+      # Use Neon's POOLED connection string and keep ?sslmode=require.
+      - key: DATABASE_URL
+        sync: false
+
+      # --- Object storage (Cloudflare R2, S3-compatible) ---
+      - key: S3_ENDPOINT
+        sync: false # https://<accountid>.r2.cloudflarestorage.com
+      - key: S3_ACCESS_KEY
+        sync: false
+      - key: S3_SECRET_KEY
+        sync: false
+      - key: S3_BUCKET
+        value: synq-files
+
+      # --- Vector DB (Qdrant Cloud) ---
+      - key: QDRANT_URL
+        sync: false # https://xxxx.cloud.qdrant.io:6333
+      - key: QDRANT_API_KEY
+        sync: false
+
+      # --- Clerk auth ---
+      - key: CLERK_JWKS_URL
+        sync: false
+      - key: CLERK_ISSUER
+        sync: false
+      - key: CLERK_WEBHOOK_SECRET
+        sync: false
+
+      # --- LLM provider keys (all free tier) ---
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: MISTRAL_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: DEFAULT_MODEL
+        value: gemini-2.5-flash
+
+  # ── Redis / Key Value (free) ───────────────────────────────────────
+  # Backs the rate limiter + circuit breakers. 25MB free tier. No
+  # persistence — fine here: it's a cache, and eager mode means no task
+  # queue to lose. allkeys-lru so it evicts cold cache keys under pressure.
+  - type: keyvalue
+    name: synq-redis
+    plan: free
+    maxmemoryPolicy: allkeys-lru
+    ipAllowList: [] # empty = reachable only from your Render services

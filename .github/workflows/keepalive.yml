@@ -1,0 +1,45 @@
+# Keep-alive pinger — backup to UptimeRobot.
+#
+# Render's free web service sleeps after ~15 min idle (≈50s cold start on
+# the next request). This workflow pings the API's /health every ~10 min so
+# it never goes idle, giving you an always-warm "click the link" experience.
+#
+# Primary keep-alive should be UptimeRobot (more reliable cadence, also
+# alerts you on downtime). This Action is a free in-repo backup.
+#
+# SETUP: add a repo secret named API_HEALTH_URL set to your API health URL,
+#   e.g. https://synq-api.onrender.com/health
+#   (GitHub → repo Settings → Secrets and variables → Actions → New secret)
+#
+# NOTE: GitHub disables scheduled workflows after 60 days with no repo
+# activity. Any push (or a manual run via the "Run workflow" button)
+# re-arms it. UptimeRobot has no such limitation.
+
+name: keep-alive
+
+on:
+  schedule:
+    # GitHub cron is best-effort and often runs a few minutes late, so we
+    # ask for every 10 min to comfortably beat the ~15 min idle timeout.
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {} # lets you trigger it by hand from the Actions tab
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping API health endpoint
+        env:
+          API_HEALTH_URL: ${{ secrets.API_HEALTH_URL }}
+        run: |
+          if [ -z "${API_HEALTH_URL}" ]; then
+            echo "API_HEALTH_URL secret is not set — skipping."
+            exit 0
+          fi
+          echo "Pinging ${API_HEALTH_URL}…"
+          # --max-time 90 tolerates a cold start; -f fails the step on a 5xx
+          # so a genuinely-down API shows up as a red run in the Actions tab.
+          curl -fsS --max-time 90 "${API_HEALTH_URL}" && echo "" && echo "OK"

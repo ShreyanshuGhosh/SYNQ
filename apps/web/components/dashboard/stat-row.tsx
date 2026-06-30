@@ -31,7 +31,7 @@ export function StatRow({ stats, limits }: Props) {
           <div className={`text-3xl font-semibold ${colorClass}`}>
             ${today.toFixed(4)}
           </div>
-          <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+          <div className="mt-1 text-xs text-slate-500">
             soft limit ${softLimit.toFixed(2)}
             {limits?.hard_daily_limit_usd != null && (
               <> · hard limit ${limits.hard_daily_limit_usd.toFixed(2)}</>
@@ -53,7 +53,7 @@ export function StatRow({ stats, limits }: Props) {
         </CardHeader>
         <CardContent>
           <div className="text-3xl font-semibold">{stats?.fallbacks_today ?? 0}</div>
-          <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+          <div className="mt-1 text-xs text-slate-500">
             provider switched automatically
           </div>
         </CardContent>

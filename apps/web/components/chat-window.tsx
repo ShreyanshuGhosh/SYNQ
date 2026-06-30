@@ -21,18 +21,13 @@ import {
 const IMAGE_MIMES = new Set(["image/png", "image/jpeg", "image/webp"]);
 
 type UploadState = {
-  /** Local id used for chip-row reconciliation while the upload is in-flight. */
   localId: string;
   filename: string;
   mime: string;
   sizeBytes: number;
-  /** 0–100 for upload progress; -1 once upload is done and parse is pending. */
   progress: number;
-  /** Server-side file id, populated after upload completes. */
   fileId?: string;
-  /** From GET /files/{id}: pending | done | failed. */
   parseStatus?: "pending" | "done" | "failed";
-  /** Last error message, if any. */
   error?: string;
 };
 
@@ -110,8 +105,6 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages.length, streamingText, pendingUserText]);
 
-  // Poll parse status for any uploads whose status is still pending.
-  // Cheap: one GET /files/{id} per second per chip until parse_status flips.
   useEffect(() => {
     const pendingIds = uploads
       .filter((u) => u.fileId && u.parseStatus === "pending")
@@ -134,8 +127,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
             parseStatus: r.value.parse_status,
             error:
               r.value.parse_status === "failed"
-                ? ((r.value.error as { message?: string } | null)?.message ??
-                  "parse_failed")
+                ? ((r.value.error as { message?: string } | null)?.message ?? "parse_failed")
                 : u.error,
           };
         }),
@@ -158,7 +150,6 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
     [conversationId, setCurrentModel],
   );
 
-  // ── Upload helpers ────────────────────────────────────────────────
   const acceptFiles = useCallback(
     async (files: File[]) => {
       const next: UploadState[] = files.map((f) => ({
@@ -178,20 +169,13 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
               conversationId,
               onProgress: (pct) =>
                 setUploads((u) =>
-                  u.map((x) =>
-                    x.localId === localId ? { ...x, progress: pct } : x,
-                  ),
+                  u.map((x) => (x.localId === localId ? { ...x, progress: pct } : x)),
                 ),
             });
             setUploads((u) =>
               u.map((x) =>
                 x.localId === localId
-                  ? {
-                      ...x,
-                      progress: -1,
-                      fileId: res.file_id,
-                      parseStatus: res.parse_status,
-                    }
+                  ? { ...x, progress: -1, fileId: res.file_id, parseStatus: res.parse_status }
                   : x,
               ),
             );
@@ -214,7 +198,6 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = Array.from(e.target.files ?? []);
       if (files.length) void acceptFiles(files);
-      // Reset so picking the same file again still triggers onChange.
       e.target.value = "";
     },
     [acceptFiles],
@@ -256,7 +239,6 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
       if (streamingState !== "idle") return;
       if (!text && readyAttachments.length === 0) return;
       setInput("");
-      // Clear chips up front; the message bubble represents them now.
       setUploads([]);
 
       const content: ContentBlock[] = [];
@@ -281,11 +263,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
         const stream = sendMessageStream(
           () => tokenRef.current(),
           conversationId,
-          {
-            content,
-            idempotencyKey,
-            model: currentModel ?? undefined,
-          },
+          { content, idempotencyKey, model: currentModel ?? undefined },
           controller.signal,
         );
         for await (const event of stream) {
@@ -326,13 +304,11 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   );
 
   const activeModel = currentModel ?? defaultModel ?? "";
-  const hasPendingParse = uploads.some(
-    (u) => u.fileId && u.parseStatus === "pending",
-  );
+  const hasPendingParse = uploads.some((u) => u.fileId && u.parseStatus === "pending");
 
   return (
     <div
-      className="flex h-full flex-col"
+      className="flex h-full flex-col bg-[#090d1a]"
       onDragOver={(e) => {
         e.preventDefault();
         setIsDragging(true);
@@ -340,14 +316,15 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
       onDragLeave={() => setIsDragging(false)}
       onDrop={onDrop}
     >
-      <header className="flex items-center justify-between border-b border-gray-200 bg-white px-6 py-3">
-        <div className="text-sm font-medium text-gray-700">Chat</div>
-        <label className="flex items-center gap-2 text-xs text-gray-500">
+      {/* Header */}
+      <header className="flex items-center justify-between border-b border-white/[0.07] bg-[#0a0e1c] px-6 py-3">
+        <div className="text-sm font-medium text-white">Chat</div>
+        <label className="flex items-center gap-2 text-xs text-slate-400">
           <span>Model</span>
           <select
             value={activeModel}
             onChange={(e) => onModelChange(e.target.value)}
-            className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs text-gray-900 focus:border-gray-900 focus:outline-none"
+            className="rounded-lg border border-white/10 bg-[#111b30] px-2 py-1 text-xs text-white focus:border-blue-500/50 focus:outline-none disabled:opacity-50"
             disabled={streamingState !== "idle" || models.length === 0}
           >
             {models.length === 0 ? (
@@ -363,18 +340,20 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
         </label>
       </header>
 
+      {/* Banners */}
       {lastSwitch && (
-        <div className="border-b border-amber-200 bg-amber-50 px-6 py-2 text-xs text-amber-800">
+        <div className="border-b border-amber-500/20 bg-amber-500/10 px-6 py-2 text-xs text-amber-300">
           Switched to {lastSwitch.model} ({lastSwitch.provider}) — {lastSwitch.note}
         </div>
       )}
       {contextWarning && (
-        <div className="border-b border-blue-200 bg-blue-50 px-6 py-2 text-xs text-blue-800">
+        <div className="border-b border-blue-500/20 bg-blue-500/10 px-6 py-2 text-xs text-blue-300">
           {contextWarning.message}
         </div>
       )}
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-6 relative">
+      {/* Messages */}
+      <div ref={scrollRef} className="relative flex-1 overflow-y-auto px-6 py-6">
         <div className="mx-auto flex max-w-2xl flex-col gap-6">
           {messages.map((m) => (
             <Bubble
@@ -414,21 +393,24 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
             <Bubble role="assistant" text={streamingText} streaming />
           )}
           {errorMessage && (
-            <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+            <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-300">
               {errorMessage}
             </div>
           )}
         </div>
         {isDragging && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-gray-900/30 backdrop-blur-sm text-white text-sm font-medium">
-            Drop files to attach
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-[#090d1a]/70 backdrop-blur-sm">
+            <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 px-8 py-4 text-sm font-medium text-blue-300">
+              Drop files to attach
+            </div>
           </div>
         )}
       </div>
 
+      {/* Input */}
       <form
         onSubmit={handleSubmit}
-        className="border-t border-gray-200 bg-white p-4"
+        className="border-t border-white/[0.07] bg-[#0a0e1c] p-4"
       >
         <div className="mx-auto flex max-w-2xl flex-col gap-2">
           {uploads.length > 0 && (
@@ -443,7 +425,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
             </div>
           )}
           {hasPendingParse && (
-            <div className="text-[11px] text-amber-700">
+            <div className="text-[11px] text-amber-400">
               Files still processing — send now to attach as-is, or wait for parsing to finish.
             </div>
           )}
@@ -460,7 +442,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={streamingState !== "idle"}
-              className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-slate-300 transition-colors hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-40"
               title="Attach file"
             >
               +
@@ -470,7 +452,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
               onChange={(e) => setInput(e.target.value)}
               onPaste={onPaste}
               placeholder={`Message ${activeModel || "the assistant"}…`}
-              className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm outline-none focus:border-gray-900"
+              className="flex-1 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white placeholder-slate-500 outline-none transition-colors focus:border-blue-500/50 disabled:opacity-50"
               disabled={streamingState !== "idle"}
             />
             <button
@@ -479,7 +461,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
                 streamingState !== "idle" ||
                 (!input.trim() && uploads.filter((u) => u.fileId).length === 0)
               }
-              className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
             >
               Send
             </button>
@@ -506,32 +488,30 @@ function UploadChip({
     <div
       className={`flex items-center gap-2 rounded-full border px-3 py-1 text-xs ${
         isFailed
-          ? "border-red-300 bg-red-50 text-red-800"
+          ? "border-red-500/30 bg-red-500/10 text-red-300"
           : isDone
-            ? "border-emerald-300 bg-emerald-50 text-emerald-800"
-            : "border-gray-300 bg-gray-50 text-gray-700"
+            ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+            : "border-white/10 bg-white/[0.04] text-slate-300"
       }`}
     >
-      <span className="max-w-[180px] truncate font-medium">
-        {upload.filename}
-      </span>
-      <span className="text-[10px] text-gray-500">
+      <span className="max-w-[180px] truncate font-medium">{upload.filename}</span>
+      <span className="text-[10px] text-slate-500">
         {(upload.sizeBytes / 1024).toFixed(0)}KB
       </span>
       {isUploading && (
-        <span className="text-[10px] text-blue-700">{upload.progress}%</span>
+        <span className="text-[10px] text-blue-400">{upload.progress}%</span>
       )}
-      {isParsing && <span className="text-[10px] text-amber-700">parsing…</span>}
-      {isDone && <span className="text-[10px] text-emerald-700">ready</span>}
+      {isParsing && <span className="text-[10px] text-amber-400">parsing…</span>}
+      {isDone && <span className="text-[10px] text-emerald-400">ready</span>}
       {isFailed && (
-        <span className="text-[10px] text-red-700" title={upload.error}>
+        <span className="text-[10px] text-red-400" title={upload.error}>
           failed
         </span>
       )}
       <button
         type="button"
         onClick={onRemove}
-        className="ml-1 rounded-full px-1 text-gray-400 hover:bg-gray-200 hover:text-gray-700"
+        className="ml-1 rounded-full px-1 text-slate-500 hover:bg-white/[0.08] hover:text-white"
         aria-label="Remove attachment"
       >
         ×
@@ -544,20 +524,12 @@ const JAEGER_BASE = process.env.NEXT_PUBLIC_JAEGER_URL ?? "http://localhost:1668
 
 function jaegerSearchUrl(conversationId: string, createdAt: string | null | undefined): string {
   const tags = JSON.stringify({ conversation_id: conversationId });
-  const params = new URLSearchParams({
-    service: "context-switcher-api",
-    tags,
-  });
-  // Best-effort time window: +/- 30s around the message's created_at so
-  // Jaeger returns just the spans for THIS turn rather than the whole
-  // conversation's history.
+  const params = new URLSearchParams({ service: "context-switcher-api", tags });
   if (createdAt) {
     const t = Date.parse(createdAt);
     if (!Number.isNaN(t)) {
-      const startUs = (t - 30_000) * 1000;
-      const endUs = (t + 30_000) * 1000;
-      params.set("start", String(startUs));
-      params.set("end", String(endUs));
+      params.set("start", String((t - 30_000) * 1000));
+      params.set("end", String((t + 30_000) * 1000));
     }
   }
   return `${JAEGER_BASE}/search?${params.toString()}`;
@@ -588,39 +560,34 @@ function Bubble({
 }) {
   const isUser = role === "user";
   const canPin = !pending && !streaming && !!meta?.id && !!onPin;
-  // Phase 6 — show a trace icon on assistant bubbles only (the user
-  // message itself doesn't produce a backend span chain worth opening).
   const canTrace =
-    !pending &&
-    !streaming &&
-    !isUser &&
-    !!conversationId &&
-    !!meta?.id;
+    !pending && !streaming && !isUser && !!conversationId && !!meta?.id;
+
   return (
     <div className={`group flex flex-col ${isUser ? "items-end" : "items-start"}`}>
       {switched && !isUser && meta?.model_used && (
-        <div className="mb-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-800">
+        <div className="mb-1 rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-300">
           Switched to {meta.model_used}
         </div>
       )}
       <div className="relative max-w-[85%]">
         <div
-          className={`whitespace-pre-wrap rounded-lg px-4 py-2 text-sm ${
+          className={`whitespace-pre-wrap rounded-xl px-4 py-3 text-sm ${
             isUser
-              ? "bg-gray-900 text-white"
-              : "border border-gray-200 bg-white text-gray-900"
+              ? "bg-blue-600 text-white"
+              : "border border-white/[0.07] bg-[#0d1526] text-slate-100"
           } ${pending ? "opacity-60" : ""}`}
         >
           {text || (streaming ? "…" : "")}
           {meta?.model_used && !isUser ? (
-            <div className="mt-1 flex items-center gap-2 text-[10px] uppercase tracking-wide text-gray-400">
+            <div className="mt-1.5 flex items-center gap-2 text-[10px] uppercase tracking-wide text-slate-500">
               <span>{meta.model_used}</span>
               {canTrace && (
                 <a
                   href={jaegerSearchUrl(conversationId!, meta?.created_at ?? null)}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="ml-1 inline-flex items-center rounded border border-gray-200 px-1 py-0 text-[10px] font-normal normal-case text-gray-500 hover:bg-gray-50 hover:text-gray-900"
+                  className="ml-1 inline-flex items-center rounded border border-white/[0.08] px-1 py-0 text-[10px] font-normal normal-case text-slate-500 transition-colors hover:border-blue-500/30 hover:text-blue-400"
                   title="Open Jaeger traces for this turn"
                 >
                   trace
@@ -635,10 +602,10 @@ function Bubble({
             onClick={isPinned ? onUnpin : onPin}
             className={`absolute -top-2 ${
               isUser ? "-left-2" : "-right-2"
-            } rounded-full border px-2 py-0.5 text-[10px] font-medium shadow-sm transition ${
+            } rounded-full border px-2 py-0.5 text-[10px] font-medium shadow-sm transition-all ${
               isPinned
-                ? "opacity-100 border-amber-400 bg-amber-50 text-amber-800 hover:bg-red-50 hover:text-red-700 hover:border-red-300"
-                : "border-gray-300 bg-white text-gray-700 opacity-0 group-hover:opacity-100 hover:bg-amber-50 hover:text-amber-800"
+                ? "opacity-100 border-amber-500/30 bg-amber-500/10 text-amber-300 hover:border-red-500/30 hover:bg-red-500/10 hover:text-red-300"
+                : "border-white/[0.08] bg-[#111b30] text-slate-500 opacity-0 group-hover:opacity-100 hover:border-amber-500/30 hover:text-amber-300"
             }`}
             title={isPinned ? "Click to unpin" : "Pin to context — survives compression"}
           >

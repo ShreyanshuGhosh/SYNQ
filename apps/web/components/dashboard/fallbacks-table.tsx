@@ -5,16 +5,16 @@ import type { FallbackResponse } from "@/lib/api";
 import Link from "next/link";
 
 const REASON_BADGE: Record<string, string> = {
-  rate_limit: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
-  overloaded: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
-  manual_switch: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
-  server: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200",
-  transport: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200",
+  rate_limit: "bg-amber-500/10 text-amber-300",
+  overloaded: "bg-red-500/10 text-red-300",
+  manual_switch: "bg-blue-500/10 text-blue-300",
+  server: "bg-purple-500/10 text-purple-300",
+  transport: "bg-white/[0.06] text-slate-300",
 };
 
 function reasonClass(reason: string | null): string {
-  if (!reason) return "bg-gray-100 text-gray-800";
-  return REASON_BADGE[reason] ?? "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200";
+  if (!reason) return "bg-white/[0.06] text-slate-300";
+  return REASON_BADGE[reason] ?? "bg-white/[0.06] text-slate-300";
 }
 
 function relativeTs(ts: string | null): string {
@@ -39,11 +39,11 @@ export function FallbacksTable({ data }: Props) {
       </CardHeader>
       <CardContent>
         {rows.length === 0 ? (
-          <p className="text-sm text-gray-500">No fallbacks recorded. Nice.</p>
+          <p className="text-sm text-slate-500">No fallbacks recorded. Nice.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="border-b border-gray-200 text-left text-xs uppercase text-gray-500 dark:border-gray-800">
+              <thead className="border-b border-white/[0.07] text-left text-xs uppercase text-slate-500">
                 <tr>
                   <th className="py-2">When</th>
                   <th className="py-2">From → To</th>
@@ -54,28 +54,26 @@ export function FallbacksTable({ data }: Props) {
               </thead>
               <tbody>
                 {rows.map((r, i) => (
-                  <tr key={i} className="border-b border-gray-100 dark:border-gray-900">
-                    <td className="py-2 text-gray-600">{relativeTs(r.ts)}</td>
+                  <tr key={i} className="border-b border-white/[0.04] last:border-b-0">
+                    <td className="py-2 text-slate-400">{relativeTs(r.ts)}</td>
                     <td className="py-2">
-                      <span className="font-mono text-xs">{r.fallback_from ?? "—"}</span>
-                      <span className="mx-1 text-gray-400">→</span>
-                      <span className="font-mono text-xs">{r.fallback_to ?? "—"}</span>
+                      <span className="font-mono text-xs text-white">{r.fallback_from ?? "—"}</span>
+                      <span className="mx-1 text-slate-500">→</span>
+                      <span className="font-mono text-xs text-white">{r.fallback_to ?? "—"}</span>
                     </td>
                     <td className="py-2">
-                      <span
-                        className={`rounded px-2 py-0.5 text-xs font-medium ${reasonClass(r.fallback_reason)}`}
-                      >
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${reasonClass(r.fallback_reason)}`}>
                         {r.fallback_reason ?? "unknown"}
                       </span>
                     </td>
-                    <td className="py-2 text-gray-600">
+                    <td className="py-2 text-slate-400">
                       {r.latency_ms != null ? `${r.latency_ms}ms` : "—"}
                     </td>
                     <td className="py-2">
                       {r.conversation_id ? (
                         <Link
                           href={`/chat/${r.conversation_id}`}
-                          className="font-mono text-xs text-blue-600 underline-offset-2 hover:underline"
+                          className="font-mono text-xs text-blue-400 underline-offset-2 hover:underline"
                         >
                           {r.conversation_id.slice(0, 8)}…
                         </Link>

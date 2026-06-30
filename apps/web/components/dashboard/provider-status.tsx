@@ -39,7 +39,7 @@ export function ProviderStatus({ providers }: Props) {
       </CardHeader>
       <CardContent>
         {providers.length === 0 && (
-          <p className="text-sm text-gray-500">No providers configured.</p>
+          <p className="text-sm text-slate-500">No providers configured.</p>
         )}
         <ul className="space-y-2">
           {providers.map((p) => {
@@ -57,13 +57,13 @@ export function ProviderStatus({ providers }: Props) {
             return (
               <li
                 key={p.provider}
-                className="flex items-center justify-between rounded-md border border-gray-100 px-3 py-2 dark:border-gray-800"
+                className="flex items-center justify-between rounded-lg border border-white/[0.07] bg-[#111b30] px-3 py-2"
               >
                 <div className="flex items-center gap-3">
                   <span className={`inline-block h-3 w-3 rounded-full ${DOT_CLASS[p.status]}`} />
                   <div>
-                    <div className="text-sm font-medium">{p.provider}</div>
-                    <div className="text-xs text-gray-500">
+                    <div className="text-sm font-medium text-white">{p.provider}</div>
+                    <div className="text-xs text-slate-500">
                       {p.model_used ?? "—"} · {p.status}
                     </div>
                   </div>
@@ -80,7 +80,7 @@ export function ProviderStatus({ providers }: Props) {
                       />
                     ))}
                   </div>
-                  <div className="text-right text-xs text-gray-500">
+                  <div className="text-right text-xs text-slate-500">
                     <span>{p.latency_ms != null ? `${p.latency_ms}ms` : "—"}</span>
                     <span className="ml-2">{relativeSince(p.checked_at)}</span>
                   </div>

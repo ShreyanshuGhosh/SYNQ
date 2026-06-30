@@ -99,8 +99,8 @@ export default function DashboardPage() {
     <div className="mx-auto max-w-7xl space-y-4 px-6 py-6">
       <header className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-          <p className="mt-1 text-sm text-gray-500">
+          <h1 className="text-2xl font-semibold tracking-tight text-white">Dashboard</h1>
+          <p className="mt-1 text-sm text-slate-400">
             Personal observability. Costs are estimated from public list prices —
             free-tier providers don&apos;t bill, so this is the &quot;what would I pay on the paid tier&quot; view.
           </p>
@@ -108,40 +108,40 @@ export default function DashboardPage() {
         <button
           onClick={refreshAll}
           disabled={loading}
-          className="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700 disabled:opacity-50 dark:bg-white dark:text-gray-900"
+          className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
         >
           {loading ? "Refreshing…" : "Refresh all"}
         </button>
       </header>
 
       {limits?.soft_warning_active && (
-        <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+        <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-4 py-2 text-sm text-amber-300">
           Soft daily limit exceeded (${limits.today_usd_estimate.toFixed(4)} / ${limits.daily_soft_limit_usd.toFixed(2)}). This is a warning only — requests still go through.
         </div>
       )}
       {limits?.hard_limit_blocked && (
-        <div className="rounded-md border border-red-300 bg-red-50 px-4 py-2 text-sm text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200">
+        <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-2 text-sm text-red-300">
           HARD daily limit reached — chat is blocked until tomorrow or until you raise HARD_DAILY_LIMIT_USD.
         </div>
       )}
       {error && (
-        <div className="rounded-md border border-red-300 bg-red-50 px-4 py-2 text-sm text-red-800">
+        <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-2 text-sm text-red-300">
           {error}
         </div>
       )}
 
       {chain && (
-        <div className="rounded-md border border-gray-200 bg-gray-50 px-4 py-2 text-xs text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300">
-          <span className="font-medium">Fallback chain:</span>{" "}
+        <div className="rounded-lg border border-white/[0.07] bg-[#0d1526] px-4 py-2 text-xs text-slate-300">
+          <span className="font-medium text-white">Fallback chain:</span>{" "}
           {chain.chain.map((c, i) => (
             <span key={i}>
-              <span className="font-mono">{c.model}</span>
-              <span className="text-gray-400"> ({c.provider})</span>
-              {i < chain.chain.length - 1 && <span className="mx-1 text-gray-400">→</span>}
+              <span className="font-mono text-white">{c.model}</span>
+              <span className="text-slate-500"> ({c.provider})</span>
+              {i < chain.chain.length - 1 && <span className="mx-1 text-slate-500">→</span>}
             </span>
           ))}
           {chain.cost_aware_routing && (
-            <span className="ml-2 text-gray-400">
+            <span className="ml-2 text-slate-500">
               · cost-aware on (&lt; {chain.cost_aware_prompt_threshold} prompt tokens)
             </span>
           )}
