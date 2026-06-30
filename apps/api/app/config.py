@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -118,6 +119,18 @@ class Settings(BaseSettings):
     # (no hard limit). Set to a number to enforce. The soft limit above
     # logs a warning and shows a banner; it never refuses a request.
     hard_daily_limit_usd: float | None = None
+
+    @field_validator("clerk_issuer", "clerk_jwks_url", mode="before")
+    @classmethod
+    def _clean_clerk_url(cls, v: object) -> object:
+        """Defensively strip whitespace + trailing slash from Clerk URLs.
+
+        Pasting these into a hosting dashboard often picks up a trailing
+        newline or slash. The JWT `iss` claim has neither, so an unstripped
+        value fails issuer validation with a confusing 401. Normalizing here
+        makes the check robust to copy-paste artifacts.
+        """
+        return v.strip().rstrip("/") if isinstance(v, str) else v
 
     @property
     def sync_database_url(self) -> str:
