@@ -122,16 +122,27 @@ class Settings(BaseSettings):
     # logs a warning and shows a banner; it never refuses a request.
     hard_daily_limit_usd: float | None = None
 
-    @field_validator("s3_endpoint", "qdrant_url", mode="before")
+    @field_validator(
+        "s3_endpoint",
+        "qdrant_url",
+        "s3_region",
+        "s3_access_key",
+        "s3_secret_key",
+        "s3_bucket",
+        "qdrant_api_key",
+        mode="before",
+    )
     @classmethod
-    def _clean_endpoint(cls, v: object) -> object:
-        """Drop any char that can't legally appear in a URL.
+    def _clean_credential(cls, v: object) -> object:
+        """Drop any char that can't legally appear in these values.
 
-        Pasting an endpoint into a hosting dashboard can inject a
-        non-breaking space, zero-width char, or BOM that stays invisible
-        but makes botocore/httpx raise a confusing "Invalid endpoint".
-        A real S3/Qdrant URL is pure printable ASCII, so stripping
-        everything outside 0x21–0x7E is safe and bulletproof.
+        Pasting endpoints/keys/regions into a hosting dashboard can inject
+        an invisible non-breaking space, zero-width char, BOM, or control
+        char. In a URL it makes botocore raise "Invalid endpoint"; in a
+        region/key it ends up in the AWS SigV4 credential scope and
+        produces an "Invalid header value" that kills the request. These
+        are all pure printable ASCII with no spaces, so stripping anything
+        outside 0x21–0x7E is safe and bulletproof.
         """
         return re.sub(r"[^\x21-\x7e]", "", v) if isinstance(v, str) else v
 
