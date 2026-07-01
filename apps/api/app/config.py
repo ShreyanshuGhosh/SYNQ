@@ -1,3 +1,5 @@
+import re
+
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -119,6 +121,19 @@ class Settings(BaseSettings):
     # (no hard limit). Set to a number to enforce. The soft limit above
     # logs a warning and shows a banner; it never refuses a request.
     hard_daily_limit_usd: float | None = None
+
+    @field_validator("s3_endpoint", "qdrant_url", mode="before")
+    @classmethod
+    def _clean_endpoint(cls, v: object) -> object:
+        """Drop any char that can't legally appear in a URL.
+
+        Pasting an endpoint into a hosting dashboard can inject a
+        non-breaking space, zero-width char, or BOM that stays invisible
+        but makes botocore/httpx raise a confusing "Invalid endpoint".
+        A real S3/Qdrant URL is pure printable ASCII, so stripping
+        everything outside 0x21–0x7E is safe and bulletproof.
+        """
+        return re.sub(r"[^\x21-\x7e]", "", v) if isinstance(v, str) else v
 
     @field_validator("clerk_issuer", "clerk_jwks_url", mode="before")
     @classmethod
