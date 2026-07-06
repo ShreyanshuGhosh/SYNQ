@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@clerk/nextjs";
+import { Paperclip } from "lucide-react";
 import type {
   ContentBlock,
   FileStatusResponse,
@@ -17,6 +18,8 @@ import {
   updateConversation,
   uploadFile,
 } from "@/lib/api";
+import { ProviderDot } from "@/components/provider-dot";
+import { providerFromModel, providerTextClass } from "@/lib/provider-identity";
 
 const IMAGE_MIMES = new Set(["image/png", "image/jpeg", "image/webp"]);
 
@@ -53,6 +56,19 @@ function attachmentSummary(content: ContentBlock[]): string {
   return ` · ${n} attachment${n === 1 ? "" : "s"}`;
 }
 
+function formatTime(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+}
+
+function totalTokens(counts: Record<string, number> | null): number | null {
+  if (!counts) return null;
+  const sum = Object.values(counts).reduce((a, b) => a + b, 0);
+  return sum > 0 ? sum : null;
+}
+
 export function ChatWindow({ conversationId }: { conversationId: string }) {
   const { getToken } = useAuth();
   const messages = useChatStore((s) => s.messages);
@@ -66,6 +82,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   const switchedTurnIds = useChatStore((s) => s.switchedTurnIds);
   const contextWarning = useChatStore((s) => s.contextWarning);
   const lastSwitch = useChatStore((s) => s.lastSwitch);
+  const conversations = useChatStore((s) => s.conversations);
   const setModels = useChatStore((s) => s.setModels);
   const setCurrentModel = useChatStore((s) => s.setCurrentModel);
   const beginSend = useChatStore((s) => s.beginSend);
@@ -304,11 +321,17 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   );
 
   const activeModel = currentModel ?? defaultModel ?? "";
+  const activeProvider = providerFromModel(activeModel);
   const hasPendingParse = uploads.some((u) => u.fileId && u.parseStatus === "pending");
+
+  // Header stats — all derived from real message data, nothing fabricated.
+  const convTitle = conversations.find((c) => c.id === conversationId)?.title ?? "Untitled";
+  const providerCount = new Set(messages.map((m) => m.model_used).filter(Boolean)).size;
+  const estCost = messages.reduce((sum, m) => sum + (m.cost_usd ? parseFloat(m.cost_usd) : 0), 0);
 
   return (
     <div
-      className="flex h-full flex-col bg-[#090d1a]"
+      className="flex h-full flex-col bg-bg"
       onDragOver={(e) => {
         e.preventDefault();
         setIsDragging(true);
@@ -316,120 +339,143 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
       onDragLeave={() => setIsDragging(false)}
       onDrop={onDrop}
     >
-      {/* Header */}
-      <header className="flex items-center justify-between border-b border-white/[0.07] bg-[#0a0e1c] px-6 py-3">
-        <div className="text-sm font-medium text-white">Chat</div>
-        <label className="flex items-center gap-2 text-xs text-slate-400">
-          <span>Model</span>
+      {/* Topbar */}
+      <header className="flex h-[54px] shrink-0 items-center gap-3 border-b border-line bg-bg px-4 md:gap-[18px] md:px-[22px]">
+        <span className="truncate text-sm font-semibold text-ink">{convTitle}</span>
+        <span className="hidden shrink-0 font-mono-data text-[11px] text-faint sm:inline">
+          {messages.length} turns
+          {providerCount > 0 && ` · ${providerCount} provider${providerCount === 1 ? "" : "s"}`}
+          {estCost > 0 && ` · $${estCost.toFixed(4)} est.`}
+        </span>
+        <span className="flex-1" />
+        <div className="relative flex items-center gap-2 rounded-[7px] border border-line-2 bg-panel px-2.5 py-1.5">
+          <ProviderDot provider={activeProvider} />
           <select
             value={activeModel}
             onChange={(e) => onModelChange(e.target.value)}
-            className="rounded-lg border border-white/10 bg-[#111b30] px-2 py-1 text-xs text-white focus:border-blue-500/50 focus:outline-none disabled:opacity-50"
+            className="appearance-none bg-transparent font-mono-data text-xs text-ink outline-none disabled:opacity-50"
             disabled={streamingState !== "idle" || models.length === 0}
+            aria-label="Active model"
           >
             {models.length === 0 ? (
-              <option value="">Loading…</option>
+              <option value="">loading…</option>
             ) : (
               models.map((m) => (
-                <option key={m.id} value={m.id}>
+                <option key={m.id} value={m.id} className="bg-panel text-ink">
                   {m.id} ({m.provider})
                 </option>
               ))
             )}
           </select>
-        </label>
+        </div>
       </header>
 
       {/* Banners */}
-      {lastSwitch && (
-        <div className="border-b border-amber-500/20 bg-amber-500/10 px-6 py-2 text-xs text-amber-300">
-          Switched to {lastSwitch.model} ({lastSwitch.provider}) — {lastSwitch.note}
-        </div>
-      )}
       {contextWarning && (
-        <div className="border-b border-blue-500/20 bg-blue-500/10 px-6 py-2 text-xs text-blue-300">
+        <div className="border-b border-line bg-teal/10 px-4 py-2 font-mono-data text-xs text-teal md:px-[22px]">
           {contextWarning.message}
         </div>
       )}
 
-      {/* Messages */}
-      <div ref={scrollRef} className="relative flex-1 overflow-y-auto px-6 py-6">
-        <div className="mx-auto flex max-w-2xl flex-col gap-6">
-          {messages.map((m) => (
-            <Bubble
-              key={m.id}
-              role={m.role}
-              text={extractText(m.content) + attachmentSummary(m.content)}
-              meta={m}
-              conversationId={conversationId}
-              switched={!!switchedTurnIds[m.id]}
-              isPinned={pinnedIds.has(m.id)}
-              onPin={async () => {
-                try {
-                  await pinMessage(() => tokenRef.current(), conversationId, m.id);
-                  setPinnedIds((prev) => new Set(prev).add(m.id));
-                } catch (e) {
-                  console.error("pin failed", e);
-                }
-              }}
-              onUnpin={async () => {
-                try {
-                  await unpinMessage(() => tokenRef.current(), conversationId, m.id);
-                  setPinnedIds((prev) => {
-                    const next = new Set(prev);
-                    next.delete(m.id);
-                    return next;
-                  });
-                } catch (e) {
-                  console.error("unpin failed", e);
-                }
-              }}
-            />
-          ))}
-          {pendingUserText !== null && (
-            <Bubble role="user" text={pendingUserText} pending />
-          )}
+      {/* Thread */}
+      <div ref={scrollRef} className="relative flex-1 overflow-y-auto">
+        <div className="mx-auto flex max-w-[860px] flex-col px-4 py-5 md:px-8">
+          {messages.map((m, i) => {
+            if (m.role === "user") {
+              return (
+                <UserEntry key={m.id} text={extractText(m.content) + attachmentSummary(m.content)} meta={m} />
+              );
+            }
+
+            const priorAssistant = messages.slice(0, i).reverse().find((x) => x.role === "assistant");
+            const isHandoff = !!switchedTurnIds[m.id];
+            const justHappened = lastSwitch && lastSwitch.model === m.model_used;
+
+            return (
+              <div key={m.id}>
+                {isHandoff && (
+                  <HandoffRow
+                    from={priorAssistant?.model_used ?? null}
+                    to={m.model_used}
+                    reason={justHappened ? lastSwitch!.note : null}
+                  />
+                )}
+                <AssistantEntry
+                  text={extractText(m.content)}
+                  meta={m}
+                  conversationId={conversationId}
+                  isPinned={pinnedIds.has(m.id)}
+                  onPin={async () => {
+                    try {
+                      await pinMessage(() => tokenRef.current(), conversationId, m.id);
+                      setPinnedIds((prev) => new Set(prev).add(m.id));
+                    } catch (e) {
+                      console.error("pin failed", e);
+                    }
+                  }}
+                  onUnpin={async () => {
+                    try {
+                      await unpinMessage(() => tokenRef.current(), conversationId, m.id);
+                      setPinnedIds((prev) => {
+                        const next = new Set(prev);
+                        next.delete(m.id);
+                        return next;
+                      });
+                    } catch (e) {
+                      console.error("unpin failed", e);
+                    }
+                  }}
+                />
+              </div>
+            );
+          })}
+
+          {pendingUserText !== null && <UserEntry text={pendingUserText} pending />}
+
           {streamingState === "streaming" && streamingText && (
-            <Bubble role="assistant" text={streamingText} streaming />
+            <AssistantEntry text={streamingText} streaming />
           )}
+
           {errorMessage && (
-            <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-300">
+            <div className="mt-4 rounded-lg border border-red-500/20 bg-red-500/10 p-3 font-mono-data text-xs text-red-300">
               {errorMessage}
             </div>
           )}
         </div>
         {isDragging && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-[#090d1a]/70 backdrop-blur-sm">
-            <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 px-8 py-4 text-sm font-medium text-blue-300">
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-bg/80 backdrop-blur-sm">
+            <div className="rounded-xl border border-teal/30 bg-teal/10 px-8 py-4 text-sm font-medium text-teal">
               Drop files to attach
             </div>
           </div>
         )}
       </div>
 
-      {/* Input */}
-      <form
-        onSubmit={handleSubmit}
-        className="border-t border-white/[0.07] bg-[#0a0e1c] p-4"
-      >
-        <div className="mx-auto flex max-w-2xl flex-col gap-2">
+      {/* Composer */}
+      <form onSubmit={handleSubmit} className="border-t border-line bg-bg2">
+        <div className="mx-auto flex max-w-[860px] flex-col gap-2 px-4 py-3.5 md:px-8">
           {uploads.length > 0 && (
             <div className="flex flex-wrap gap-2">
               {uploads.map((u) => (
-                <UploadChip
-                  key={u.localId}
-                  upload={u}
-                  onRemove={() => removeUpload(u.localId)}
-                />
+                <UploadChip key={u.localId} upload={u} onRemove={() => removeUpload(u.localId)} />
               ))}
             </div>
           )}
           {hasPendingParse && (
-            <div className="text-[11px] text-amber-400">
+            <div className="font-mono-data text-[11px] text-amber">
               Files still processing — send now to attach as-is, or wait for parsing to finish.
             </div>
           )}
-          <div className="flex gap-2">
+          <div className="flex items-end overflow-hidden rounded-lg border border-line-2 bg-bg transition-colors focus-within:border-teal">
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={streamingState !== "idle"}
+              className="flex items-center px-3 py-3 text-faint hover:text-teal disabled:cursor-not-allowed disabled:opacity-40"
+              title="Attach file"
+            >
+              <Paperclip className="h-4 w-4" strokeWidth={2} />
+            </button>
             <input
               ref={fileInputRef}
               type="file"
@@ -438,21 +484,12 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
               className="hidden"
               onChange={onPickFiles}
             />
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={streamingState !== "idle"}
-              className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-slate-300 transition-colors hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-40"
-              title="Attach file"
-            >
-              +
-            </button>
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onPaste={onPaste}
-              placeholder={`Message ${activeModel || "the assistant"}…`}
-              className="flex-1 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white placeholder-slate-500 outline-none transition-colors focus:border-blue-500/50 disabled:opacity-50"
+              placeholder={`Message ${activeModel || "SYNQ"}…`}
+              className="flex-1 bg-transparent py-3 text-sm text-ink placeholder-faint outline-none disabled:opacity-50"
               disabled={streamingState !== "idle"}
             />
             <button
@@ -461,10 +498,14 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
                 streamingState !== "idle" ||
                 (!input.trim() && uploads.filter((u) => u.fileId).length === 0)
               }
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
+              className="self-stretch border-l border-line-2 px-4 font-mono-data text-xs font-semibold text-dim hover:bg-panel hover:text-teal disabled:cursor-not-allowed disabled:opacity-40"
             >
-              Send
+              SEND ↵
             </button>
+          </div>
+          <div className="hidden justify-end gap-3.5 font-mono-data text-[10.5px] text-faint sm:flex">
+            <span>↵ send</span>
+            <span>⇧↵ newline</span>
           </div>
         </div>
       </form>
@@ -472,13 +513,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   );
 }
 
-function UploadChip({
-  upload,
-  onRemove,
-}: {
-  upload: UploadState;
-  onRemove: () => void;
-}) {
+function UploadChip({ upload, onRemove }: { upload: UploadState; onRemove: () => void }) {
   const isFailed = upload.parseStatus === "failed";
   const isParsing = upload.fileId && upload.parseStatus === "pending";
   const isDone = upload.parseStatus === "done";
@@ -486,23 +521,19 @@ function UploadChip({
 
   return (
     <div
-      className={`flex items-center gap-2 rounded-full border px-3 py-1 text-xs ${
+      className={`flex items-center gap-2 rounded-full border px-3 py-1 font-mono-data text-xs ${
         isFailed
           ? "border-red-500/30 bg-red-500/10 text-red-300"
           : isDone
-            ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
-            : "border-white/10 bg-white/[0.04] text-slate-300"
+            ? "border-brand-green/30 bg-brand-green/10 text-brand-green"
+            : "border-line-2 bg-panel text-dim"
       }`}
     >
-      <span className="max-w-[180px] truncate font-medium">{upload.filename}</span>
-      <span className="text-[10px] text-slate-500">
-        {(upload.sizeBytes / 1024).toFixed(0)}KB
-      </span>
-      {isUploading && (
-        <span className="text-[10px] text-blue-400">{upload.progress}%</span>
-      )}
-      {isParsing && <span className="text-[10px] text-amber-400">parsing…</span>}
-      {isDone && <span className="text-[10px] text-emerald-400">ready</span>}
+      <span className="max-w-[180px] truncate font-sans font-medium">{upload.filename}</span>
+      <span className="text-[10px] text-faint">{(upload.sizeBytes / 1024).toFixed(0)}KB</span>
+      {isUploading && <span className="text-[10px] text-gemini">{upload.progress}%</span>}
+      {isParsing && <span className="text-[10px] text-amber">parsing…</span>}
+      {isDone && <span className="text-[10px] text-brand-green">ready</span>}
       {isFailed && (
         <span className="text-[10px] text-red-400" title={upload.error}>
           failed
@@ -511,7 +542,7 @@ function UploadChip({
       <button
         type="button"
         onClick={onRemove}
-        className="ml-1 rounded-full px-1 text-slate-500 hover:bg-white/[0.08] hover:text-white"
+        className="ml-1 rounded-full px-1 text-faint hover:bg-panel-2 hover:text-ink"
         aria-label="Remove attachment"
       >
         ×
@@ -535,77 +566,105 @@ function jaegerSearchUrl(conversationId: string, createdAt: string | null | unde
   return `${JAEGER_BASE}/search?${params.toString()}`;
 }
 
-function Bubble({
-  role,
+/** Full-bleed routing event row — the product's hero moment. Amber owns
+ * this and only this: it always means "SYNQ made a routing decision". */
+function HandoffRow({ from, to, reason }: { from: string | null; to: string | null; reason?: string | null }) {
+  return (
+    <div className="-mx-4 my-1 grid grid-cols-[76px_1fr] gap-3 border-y border-line bg-amber/10 px-4 py-3 md:-mx-8 md:grid-cols-[118px_1fr] md:gap-[22px] md:px-8">
+      <span className="pt-0.5 font-mono-data text-[11px] font-medium text-amber">synq</span>
+      <div className="font-mono-data text-xs leading-relaxed text-dim">
+        <b className="font-medium text-ink">{from ?? "unknown"}</b>
+        <span className="text-faint"> → </span>
+        <b className="font-medium text-ink">{to ?? "unknown"}</b>
+        {reason && (
+          <>
+            <br />
+            <span className="text-faint">reason</span> {reason}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function UserEntry({ text, meta, pending }: { text: string; meta?: Message; pending?: boolean }) {
+  return (
+    <div className="flex flex-col items-end gap-1.5 border-b border-line py-4">
+      <div
+        className={`max-w-[85%] rounded-[10px_10px_3px_10px] border border-line-2 bg-panel-2 px-4 py-[11px] text-sm leading-relaxed text-ink md:max-w-[72%] ${
+          pending ? "opacity-60" : ""
+        }`}
+      >
+        <span className="whitespace-pre-wrap">{text}</span>
+      </div>
+      {meta && (
+        <span className="font-mono-data text-[11px] text-faint">
+          you · #{meta.turn_index} · {formatTime(meta.created_at)}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function AssistantEntry({
   text,
-  pending,
   streaming,
   meta,
   conversationId,
-  switched,
   isPinned,
   onPin,
   onUnpin,
 }: {
-  role: "user" | "assistant" | "system";
   text: string;
-  pending?: boolean;
   streaming?: boolean;
   meta?: Message;
   conversationId?: string;
-  switched?: boolean;
   isPinned?: boolean;
   onPin?: () => void;
   onUnpin?: () => void;
 }) {
-  const isUser = role === "user";
-  const canPin = !pending && !streaming && !!meta?.id && !!onPin;
-  const canTrace =
-    !pending && !streaming && !isUser && !!conversationId && !!meta?.id;
+  const provider = providerFromModel(meta?.model_used);
+  const canPin = !streaming && !!meta?.id && !!onPin;
+  const canTrace = !streaming && !!conversationId && !!meta?.id;
+  const tokens = meta ? totalTokens(meta.token_counts) : null;
+  const cost = meta?.cost_usd ? parseFloat(meta.cost_usd) : null;
 
   return (
-    <div className={`group flex flex-col ${isUser ? "items-end" : "items-start"}`}>
-      {switched && !isUser && meta?.model_used && (
-        <div className="mb-1 rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-300">
-          Switched to {meta.model_used}
-        </div>
-      )}
-      <div className="relative max-w-[85%]">
-        <div
-          className={`whitespace-pre-wrap rounded-xl px-4 py-3 text-sm ${
-            isUser
-              ? "bg-blue-600 text-white"
-              : "border border-white/[0.07] bg-[#0d1526] text-slate-100"
-          } ${pending ? "opacity-60" : ""}`}
-        >
-          {text || (streaming ? "…" : "")}
-          {meta?.model_used && !isUser ? (
-            <div className="mt-1.5 flex items-center gap-2 text-[10px] uppercase tracking-wide text-slate-500">
-              <span>{meta.model_used}</span>
-              {canTrace && (
-                <a
-                  href={jaegerSearchUrl(conversationId!, meta?.created_at ?? null)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="ml-1 inline-flex items-center rounded border border-white/[0.08] px-1 py-0 text-[10px] font-normal normal-case text-slate-500 transition-colors hover:border-blue-500/30 hover:text-blue-400"
-                  title="Open Jaeger traces for this turn"
-                >
-                  trace
-                </a>
-              )}
-            </div>
-          ) : null}
-        </div>
+    <div className="group grid grid-cols-[76px_1fr] gap-3 border-b border-line py-4 md:grid-cols-[118px_1fr] md:gap-[22px] md:py-[18px]">
+      <div className="flex flex-col gap-1 pt-0.5 font-mono-data text-[11px] text-faint">
+        <span className={`flex items-center gap-1.5 text-[11.5px] font-medium ${providerTextClass(provider)}`}>
+          <ProviderDot provider={provider} />
+          {meta?.model_used ?? (streaming ? "assistant" : "—")}
+        </span>
+        {meta && <span className="text-faint">#{meta.turn_index} · {formatTime(meta.created_at)}</span>}
+      </div>
+      <div className="relative min-w-0 text-sm leading-relaxed text-ink">
+        <span className="whitespace-pre-wrap">{text || (streaming ? "…" : "")}</span>
+        {meta && (tokens != null || cost != null || canTrace) && (
+          <div className="mt-3 flex flex-wrap items-center gap-3 font-mono-data text-[10.5px] text-faint">
+            {tokens != null && <span>{tokens.toLocaleString()} tok</span>}
+            {cost != null && cost > 0 && <span>${cost.toFixed(4)}</span>}
+            {canTrace && (
+              <a
+                href={jaegerSearchUrl(conversationId!, meta?.created_at ?? null)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="border-b border-dotted border-faint hover:border-teal hover:text-teal"
+                title="Open Jaeger traces for this turn"
+              >
+                trace
+              </a>
+            )}
+          </div>
+        )}
         {canPin && (
           <button
             type="button"
             onClick={isPinned ? onUnpin : onPin}
-            className={`absolute -top-2 ${
-              isUser ? "-left-2" : "-right-2"
-            } rounded-full border px-2 py-0.5 text-[10px] font-medium shadow-sm transition-all ${
+            className={`absolute -right-1 -top-1 rounded-full border px-2 py-0.5 font-mono-data text-[10px] font-medium transition-opacity ${
               isPinned
-                ? "opacity-100 border-amber-500/30 bg-amber-500/10 text-amber-300 hover:border-red-500/30 hover:bg-red-500/10 hover:text-red-300"
-                : "border-white/[0.08] bg-[#111b30] text-slate-500 opacity-0 group-hover:opacity-100 hover:border-amber-500/30 hover:text-amber-300"
+                ? "opacity-100 border-amber/30 bg-amber/10 text-amber hover:border-red-500/30 hover:bg-red-500/10 hover:text-red-300"
+                : "border-line-2 bg-panel text-faint opacity-0 group-hover:opacity-100 hover:border-amber/30 hover:text-amber"
             }`}
             title={isPinned ? "Click to unpin" : "Pin to context — survives compression"}
           >

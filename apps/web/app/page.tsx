@@ -1,396 +1,277 @@
 import Link from "next/link";
 import { SignedIn, SignedOut } from "@clerk/nextjs";
-import { Layers, Shuffle, DollarSign, Zap, Activity, BarChart2 } from "lucide-react";
 import { SynqLogo } from "@/components/synq-logo";
-
-const features = [
-  {
-    icon: Layers,
-    title: "Cross-provider continuity",
-    desc: "Keep the same thread alive across Gemini, Mistral, and Groq — no copy-paste, no restart.",
-  },
-  {
-    icon: Shuffle,
-    title: "Automatic fallback",
-    desc: "If a model is rate-limited or down, SYNQ silently re-routes to the next provider in your chain.",
-  },
-  {
-    icon: DollarSign,
-    title: "Cost-aware routing",
-    desc: "Short prompts go to the cheapest capable model. You set the rules — SYNQ does the math.",
-  },
-  {
-    icon: Zap,
-    title: "Switch mid-conversation",
-    desc: "Need bigger context or faster latency? Swap models on the fly without losing a beat.",
-  },
-  {
-    icon: Activity,
-    title: "Per-message trace",
-    desc: "Every turn shows the provider, model, tokens, and decision behind it.",
-  },
-  {
-    icon: BarChart2,
-    title: "Personal observability",
-    desc: "A dashboard for spend, fallbacks, and provider health — built for you, not for an org.",
-  },
-];
-
-const steps = [
-  {
-    title: "Start chatting on any model",
-    desc: "Pick Gemini, Mistral, or Groq — or let SYNQ choose by cost. Just talk.",
-  },
-  {
-    title: "A model runs out — or you switch",
-    desc: "Quota hit, latency spike, or you just want a different brain. Either trigger works.",
-  },
-  {
-    title: "SYNQ continues, seamlessly",
-    desc: "The next provider picks up with full context. The conversation never resets.",
-  },
-];
 
 export default function Home() {
   return (
-    <div className="min-h-screen bg-[#090d1a] text-white">
-      {/* ── Navbar ── */}
-      <nav className="fixed inset-x-0 top-0 z-50 border-b border-white/[0.06] bg-[#090d1a]/90 backdrop-blur-md">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-          <SynqLogo size="text-lg" />
-          <div className="hidden items-center gap-8 text-sm text-slate-400 md:flex">
-            <a href="#features" className="transition-colors hover:text-white">Features</a>
-            <a href="#how-it-works" className="transition-colors hover:text-white">How it works</a>
-            <Link href="/dashboard" className="transition-colors hover:text-white">Dashboard</Link>
+    <div className="bg-paper font-landing-body text-text-ink">
+      {/* ── Nav ── */}
+      <nav className="sticky top-0 z-50 border-b border-paper-line bg-paper/90 backdrop-blur-md">
+        <div className="mx-auto flex h-[62px] max-w-[1060px] items-center justify-between px-6">
+          <Link href="/" className="flex items-center gap-2">
+            <SynqLogo variant="landing" size="text-lg" />
+          </Link>
+          <div className="flex items-center gap-6 text-sm">
+            <a href="#demo" className="hidden font-medium text-ink-dim transition-colors hover:text-text-ink md:inline">
+              Live demo
+            </a>
+            <a href="#why" className="hidden font-medium text-ink-dim transition-colors hover:text-text-ink md:inline">
+              Why SYNQ
+            </a>
+            <a href="#traces" className="hidden font-medium text-ink-dim transition-colors hover:text-text-ink md:inline">
+              Traces
+            </a>
+            <SignedOut>
+              <Link
+                href="/sign-in"
+                className="rounded-full border-[1.5px] border-text-ink px-5 py-2 text-sm font-semibold text-text-ink transition-colors hover:bg-text-ink hover:text-paper"
+              >
+                Sign in
+              </Link>
+              <Link
+                href="/sign-up"
+                className="rounded-full bg-teal-landing px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-teal-landing-dark"
+              >
+                Start free
+              </Link>
+            </SignedOut>
+            <SignedIn>
+              <Link
+                href="/chat"
+                className="rounded-full bg-teal-landing px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-teal-landing-dark"
+              >
+                Open chat →
+              </Link>
+            </SignedIn>
           </div>
-          <SignedOut>
-            <Link
-              href="/sign-in"
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500"
-            >
-              Open chat →
-            </Link>
-          </SignedOut>
-          <SignedIn>
-            <Link
-              href="/chat"
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500"
-            >
-              Open chat →
-            </Link>
-          </SignedIn>
         </div>
       </nav>
 
       {/* ── Hero ── */}
-      <section className="relative flex min-h-screen flex-col items-center justify-center pt-16 text-center">
-        {/* Grid overlay */}
-        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(59,130,246,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(59,130,246,0.05)_1px,transparent_1px)] bg-[size:64px_64px]" />
-        {/* Radial glow */}
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-10%,rgba(59,130,246,0.12),transparent)]" />
+      <header className="px-6 pb-10 pt-24 text-center">
+        <h1 className="mx-auto max-w-[16ch] font-landing-display text-[clamp(38px,6vw,66px)] font-bold leading-[1.05] tracking-[-0.025em]">
+          <span className="relative whitespace-nowrap text-ink-dim">
+            Start a new chat.
+            <span
+              aria-hidden="true"
+              className="absolute inset-x-[-2%] top-1/2 h-[3px] -rotate-[1.5deg] rounded bg-coral"
+            />
+          </span>
+          <br />
+          Keep the thread.
+        </h1>
+        <p className="mx-auto mt-6 max-w-[50ch] text-lg text-ink-dim">
+          SYNQ is one continuous conversation that flows across Gemini, Mistral, and Groq —
+          models change underneath, your context never does.
+        </p>
+        <div className="mt-8 flex justify-center gap-3">
+          <SignedIn>
+            <Link
+              href="/chat"
+              className="rounded-full bg-teal-landing px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-teal-landing-dark"
+            >
+              Open chat →
+            </Link>
+          </SignedIn>
+          <SignedOut>
+            <Link
+              href="/sign-up"
+              className="rounded-full bg-teal-landing px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-teal-landing-dark"
+            >
+              Start free
+            </Link>
+          </SignedOut>
+          <a
+            href="#demo"
+            className="rounded-full border-[1.5px] border-text-ink px-6 py-3 text-sm font-semibold text-text-ink transition-colors hover:bg-text-ink hover:text-paper"
+          >
+            See how
+          </a>
+        </div>
 
-        <div className="relative z-10 flex flex-col items-center gap-7 px-6">
-          {/* Live badge */}
-          <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5 text-sm text-slate-300">
-            <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
-            Live across Gemini · Mistral · Groq
+        {/* Signature thread SVG — one conversation flowing through three providers */}
+        <div className="mx-auto mt-[72px] max-w-[920px] px-3" aria-label="One conversation flowing through three providers">
+          <svg viewBox="0 0 920 190" className="block h-auto w-full">
+            <path
+              d="M20 100 C 120 100, 150 60, 230 60 H 330 C 400 60, 420 130, 500 130 H 610 C 680 130, 700 85, 780 85 H 900"
+              stroke="#0e7c74"
+              strokeWidth="3"
+              fill="none"
+              strokeLinecap="round"
+            />
+            <path
+              className="animate-thread-flow"
+              d="M20 100 C 120 100, 150 60, 230 60 H 330 C 400 60, 420 130, 500 130 H 610 C 680 130, 700 85, 780 85 H 900"
+              stroke="#0e7c74"
+              strokeWidth="3"
+              fill="none"
+              strokeLinecap="round"
+              strokeDasharray="10 14"
+              opacity="0.5"
+            />
+            <rect x="200" y="38" width="140" height="44" rx="10" fill="#ffffff" stroke="#dfe3e0" strokeWidth="1.5" />
+            <text x="270" y="57" textAnchor="middle" className="font-landing-mono text-[12px] font-medium" fill="#151a1e">gemini-2.0</text>
+            <text x="270" y="72" textAnchor="middle" className="font-landing-mono text-[9.5px]" fill="#6a7480">turns 1–41</text>
+
+            <rect x="470" y="108" width="150" height="44" rx="10" fill="#ffffff" stroke="#dfe3e0" strokeWidth="1.5" />
+            <text x="545" y="127" textAnchor="middle" className="font-landing-mono text-[12px] font-medium" fill="#151a1e">mistral-large</text>
+            <text x="545" y="142" textAnchor="middle" className="font-landing-mono text-[9.5px]" fill="#6a7480">turns 42–58</text>
+
+            <rect x="750" y="63" width="140" height="44" rx="10" fill="#ffffff" stroke="#dfe3e0" strokeWidth="1.5" />
+            <text x="820" y="82" textAnchor="middle" className="font-landing-mono text-[12px] font-medium" fill="#151a1e">groq-llama3</text>
+            <text x="820" y="97" textAnchor="middle" className="font-landing-mono text-[9.5px]" fill="#6a7480">turn 59 →</text>
+
+            <text x="400" y="100" className="font-landing-mono text-[10px] font-medium" fill="#e0543a">→ rate limit · auto handoff</text>
+            <text x="655" y="112" className="font-landing-mono text-[10px] font-medium" fill="#e0543a">→ cheap task · routed</text>
+          </svg>
+          <p className="mt-4 text-center font-landing-mono text-[12.5px] text-ink-dim">
+            one thread · three providers · <b className="font-medium text-teal-landing">context intact end-to-end</b>
+          </p>
+        </div>
+      </header>
+
+      {/* ── Terminal (dark card on light page) ── */}
+      <section className="px-6 py-24" id="demo">
+        <div className="mx-auto max-w-[1060px]">
+          <div className="mx-auto mb-12 max-w-[56ch] text-center">
+            <span className="mb-3 block font-landing-mono text-xs uppercase tracking-[0.14em] text-teal-landing">
+              Live handoff
+            </span>
+            <h2 className="font-landing-display text-[clamp(26px,3.6vw,34px)] font-bold leading-[1.15] tracking-[-0.02em]">
+              Watch a rate limit become a non-event.
+            </h2>
+            <p className="mt-3.5 text-base text-ink-dim">
+              This is a real session. Gemini hits a 429 mid-answer — SYNQ hands the full thread
+              to Mistral before the next keystroke.
+            </p>
           </div>
 
-          {/* Heading */}
-          <h1 className="max-w-3xl text-6xl font-bold leading-[1.05] tracking-tight text-white lg:text-7xl">
-            Never Start Over.
-            <br />
-            Stay in{" "}
-            <span className="inline-flex items-baseline">
-              <span>SYN</span>
-              <svg viewBox="0 4 40 40" className="inline-block h-[0.88em] w-auto align-baseline" fill="none" aria-hidden="true">
-                <path d="M 25.9 12.3 A 14 14 0 1 1 18.8 11.1" stroke="#3b82f6" strokeWidth="6.5" strokeLinecap="butt" />
-                <polygon points="23,11 15,15 15,7" fill="#3b82f6" />
-              </svg>
-              <span>.</span>
-            </span>
-          </h1>
-
-          {/* Subtitle */}
-          <p className="max-w-xl text-base leading-relaxed text-slate-400">
-            Continue any AI conversation across providers. When one model runs out — or you just
-            want to switch — SYNQ keeps the thread going on another, with the full context carried
-            over.
-          </p>
-
-          {/* CTAs */}
-          <div className="flex flex-wrap items-center justify-center gap-3">
-            <SignedIn>
-              <Link
-                href="/chat"
-                className="flex items-center gap-2 rounded-lg bg-blue-600 px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-blue-500"
-              >
-                Open chat →
-              </Link>
-              <Link
-                href="/dashboard"
-                className="flex items-center gap-2 rounded-lg border border-white/20 px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-white/[0.06]"
-              >
-                View dashboard
-              </Link>
-            </SignedIn>
-            <SignedOut>
-              <Link
-                href="/sign-up"
-                className="flex items-center gap-2 rounded-lg bg-blue-600 px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-blue-500"
-              >
-                Open chat →
-              </Link>
-              <Link
-                href="/sign-in"
-                className="flex items-center gap-2 rounded-lg border border-white/20 px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-white/[0.06]"
-              >
-                View dashboard
-              </Link>
-            </SignedOut>
+          <div className="mx-auto max-w-[860px] overflow-hidden rounded-[14px] border border-[#232b3a] bg-[#151b26] shadow-[0_32px_80px_-32px_rgba(21,26,30,0.35)]">
+            <div className="flex items-center gap-2 border-b border-[#232b3a] bg-[#0d1117] px-4 py-3">
+              <span className="h-[11px] w-[11px] rounded-full bg-[#2a3345]" />
+              <span className="h-[11px] w-[11px] rounded-full bg-[#2a3345]" />
+              <span className="h-[11px] w-[11px] rounded-full bg-[#2a3345]" />
+              <span className="ml-2 font-landing-mono text-[11.5px] text-[#8b95a7]">synq · session_8f2c</span>
+            </div>
+            <div className="space-y-3.5 px-6 py-5 font-landing-mono text-[13px] leading-relaxed text-[#e6e9ef]">
+              <p><span className="text-[#8b95a7]">you    ▸ </span>walk me through sharding this postgres table</p>
+              <p><span className="text-gemini">gemini ▸ </span>Sharding by tenant_id makes sense here. Start with a hash…</p>
+              <p className="rounded-r-md border-l-2 border-amber bg-amber/10 px-3 py-1.5 text-xs leading-relaxed text-amber">
+                ⚡ gemini-2.0 rate limited → handing off to mistral-large · context: 41 turns, 18.2k tokens · 240ms
+              </p>
+              <p><span className="text-mistral">mistral▸ </span>Continuing from the hash strategy above — for rebalancing you&apos;ll want…</p>
+              <p><span className="text-[#8b95a7]">you    ▸ </span>quick one: cron syntax for every 15 min</p>
+              <p className="text-[#8b95a7]">   ⏳ routed to groq-llama3 · trivial task · est. $0.0001</p>
+              <p><span className="text-groq">groq   ▸ </span>*/15 * * * *</p>
+              <p>
+                <span className="text-[#8b95a7]">you    ▸ </span>
+                <span className="animate-cursor-blink inline-block h-[15px] w-2 translate-y-0.5 bg-amber align-text-bottom" />
+              </p>
+            </div>
           </div>
         </div>
       </section>
 
-      {/* ── Provider bar ── */}
-      <div className="border-y border-white/[0.06] bg-[#0d1120] py-5">
-        <div className="mx-auto flex max-w-4xl flex-wrap items-center justify-center gap-10 px-6 text-sm text-slate-300">
-          <span className="text-[11px] uppercase tracking-[0.15em] text-slate-500">Works across</span>
-          <div className="flex items-center gap-2">
-            <span className="h-2 w-2 rounded-full bg-blue-400" />
-            Gemini
+      {/* ── Claims ── */}
+      <section className="px-6 pb-24" id="why">
+        <div className="mx-auto grid max-w-[1060px] grid-cols-1 gap-5 md:grid-cols-[1.2fr_1fr_1fr]">
+          <div className="rounded-2xl border border-teal-landing bg-teal-landing p-8 text-white">
+            <span className="mb-4 block font-landing-mono text-xs tracking-[0.1em] text-white/85">CONTINUITY</span>
+            <h3 className="mb-2.5 font-landing-display text-[21px] font-semibold tracking-[-0.01em]">
+              The model changes. The conversation doesn&apos;t.
+            </h3>
+            <p className="text-[14.5px] text-white/85">
+              Every handoff carries your full history forward — the next model reads the entire
+              thread, not a lossy summary. No re-explaining, no copy-paste.
+            </p>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="h-2 w-2 rounded-full bg-purple-400" />
-            Mistral
+          <div className="rounded-2xl border border-paper-line bg-card p-8">
+            <span className="mb-4 block font-landing-display text-[44px] font-bold tracking-[-0.02em]">&lt;300ms</span>
+            <h3 className="mb-2.5 font-landing-display text-[21px] font-semibold tracking-[-0.01em]">Invisible fallback</h3>
+            <p className="text-[14.5px] text-ink-dim">
+              Rate limits and outages reroute mid-sentence. Most people never notice a provider
+              went down.
+            </p>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="h-2 w-2 rounded-full bg-red-400" />
-            Groq
+          <div className="rounded-2xl border border-paper-line bg-card p-8">
+            <span className="mb-4 block font-landing-display text-[44px] font-bold tracking-[-0.02em]">–38%</span>
+            <h3 className="mb-2.5 font-landing-display text-[21px] font-semibold tracking-[-0.01em]">Routing that pays for itself</h3>
+            <p className="text-[14.5px] text-ink-dim">
+              Trivial prompts go to fast, cheap models automatically. Frontier models only when
+              the task earns it.
+            </p>
           </div>
         </div>
+      </section>
+
+      {/* ── Receipt ── */}
+      <section className="border-y border-paper-line bg-card py-[88px]" id="traces">
+        <div className="mx-auto grid max-w-[1060px] grid-cols-1 items-center gap-16 px-6 md:grid-cols-[1fr_400px]">
+          <div>
+            <h2 className="font-landing-display text-[clamp(26px,3.6vw,34px)] font-bold leading-[1.15] tracking-[-0.02em]">
+              Every message comes with a receipt.
+            </h2>
+            <p className="mt-4 max-w-[44ch] text-base text-ink-dim">
+              Provider, model, token count, and the reason behind every routing decision —
+              attached to each message and rolled up in your dashboard. If SYNQ made a choice,
+              you can see why.
+            </p>
+            <div className="mt-7">
+              <SignedIn>
+                <Link href="/dashboard" className="inline-block rounded-full bg-teal-landing px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-teal-landing-dark">
+                  Open the dashboard
+                </Link>
+              </SignedIn>
+              <SignedOut>
+                <Link href="/sign-up" className="inline-block rounded-full bg-teal-landing px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-teal-landing-dark">
+                  Open the dashboard
+                </Link>
+              </SignedOut>
+            </div>
+          </div>
+          <div className="rounded-xl border border-paper-line bg-paper p-6 font-landing-mono text-[12.5px]">
+            <div className="mb-3 flex justify-between border-b border-dashed border-paper-line pb-3 font-semibold">
+              <span>TRACE · msg_2941</span><span>14:32:07</span>
+            </div>
+            <div className="flex justify-between py-1 text-ink-dim"><span>provider</span><b className="font-medium text-text-ink">mistral-large</b></div>
+            <div className="flex justify-between py-1 text-ink-dim"><span>reason</span><b className="font-medium text-text-ink">fallback (gemini 429)</b></div>
+            <div className="flex justify-between py-1 text-coral"><span>context handoff</span><span>18.2k tok · 240ms</span></div>
+            <div className="flex justify-between py-1 text-ink-dim"><span>tokens in / out</span><b className="font-medium text-text-ink">1,204 / 358</b></div>
+            <div className="flex justify-between py-1 text-ink-dim"><span>latency</span><b className="font-medium text-text-ink">1.9s</b></div>
+            <div className="mt-3 flex justify-between border-t border-dashed border-paper-line pt-3 font-semibold">
+              <span>message cost</span><span className="text-teal-landing">$0.0031</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── CTA ── */}
+      <div className="px-6 py-[100px] text-center">
+        <h2 className="mx-auto mb-3.5 max-w-[18ch] font-landing-display text-[clamp(26px,3.6vw,34px)] font-bold leading-[1.15] tracking-[-0.02em]">
+          Pick up where you left off. Always.
+        </h2>
+        <p className="mb-8 text-ink-dim">Connect your keys in two minutes. Free while in beta.</p>
+        <SignedIn>
+          <Link href="/chat" className="inline-block rounded-full bg-teal-landing px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-teal-landing-dark">
+            Open your workspace
+          </Link>
+        </SignedIn>
+        <SignedOut>
+          <Link href="/sign-up" className="inline-block rounded-full bg-teal-landing px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-teal-landing-dark">
+            Create your workspace
+          </Link>
+        </SignedOut>
       </div>
 
-      {/* ── Context carries over ── */}
-      <section className="px-6 py-24">
-        <div className="mx-auto max-w-4xl">
-          <p className="mb-4 text-center text-[11px] uppercase tracking-[0.15em] text-blue-500">
-            One conversation, many models
-          </p>
-          <h2 className="mb-14 text-center text-4xl font-bold text-white">
-            Context carries over. Automatically.
-          </h2>
-          <div className="rounded-2xl border border-white/[0.07] bg-[#0d1526] p-10">
-            <div className="flex items-center justify-between">
-              {/* Gemini */}
-              <div className="flex flex-col items-center gap-3">
-                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-blue-500/20 text-sm font-bold text-blue-400">
-                  GE
-                </div>
-                <p className="font-semibold text-white">Gemini</p>
-                <p className="text-xs text-slate-500">Start</p>
-              </div>
-              <div className="mx-4 flex-1 border-t border-dashed border-white/20" />
-              {/* Groq */}
-              <div className="flex flex-col items-center gap-3">
-                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-red-500/20 text-sm font-bold text-red-400">
-                  GR
-                </div>
-                <p className="font-semibold text-white">Groq</p>
-                <p className="text-xs text-slate-500">Fallback</p>
-              </div>
-              <div className="mx-4 flex-1 border-t border-dashed border-white/20" />
-              {/* Mistral */}
-              <div className="flex flex-col items-center gap-3">
-                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-purple-500/20 text-sm font-bold text-purple-400">
-                  MI
-                </div>
-                <p className="font-semibold text-white">Mistral</p>
-                <p className="text-xs text-slate-500">Continue</p>
-              </div>
-            </div>
-            <p className="mt-8 flex items-center justify-center gap-2 text-xs text-slate-400">
-              <svg className="h-4 w-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={1.5}
-                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                />
-              </svg>
-              Full conversation context handed off at each step
-            </p>
-          </div>
-        </div>
-      </section>
-
-      {/* ── Features ── */}
-      <section id="features" className="px-6 py-24">
-        <div className="mx-auto max-w-6xl">
-          <p className="mb-3 text-[11px] uppercase tracking-[0.15em] text-blue-500">Features</p>
-          <h2 className="mb-3 text-4xl font-bold text-white">
-            Built for people who actually live in chat.
-          </h2>
-          <p className="mb-16 text-slate-400">
-            A thin layer over the providers you already use — with the orchestration you wish they
-            had.
-          </p>
-          <div className="overflow-hidden rounded-2xl border border-white/[0.07]">
-            <div className="grid grid-cols-1 gap-px bg-white/[0.06] md:grid-cols-3">
-              {features.map((f, i) => {
-                const Icon = f.icon;
-                return (
-                  <div key={i} className="bg-[#0d1526] p-8">
-                    <div className="mb-5 flex h-10 w-10 items-center justify-center rounded-lg bg-blue-500/10">
-                      <Icon className="h-5 w-5 text-blue-500" />
-                    </div>
-                    <h3 className="mb-2 font-semibold text-white">{f.title}</h3>
-                    <p className="text-sm leading-relaxed text-slate-400">{f.desc}</p>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── How it works ── */}
-      <section id="how-it-works" className="px-6 py-24">
-        <div className="mx-auto max-w-6xl">
-          <p className="mb-4 text-center text-[11px] uppercase tracking-[0.15em] text-blue-500">
-            How it works
-          </p>
-          <h2 className="mb-16 text-center text-4xl font-bold text-white">
-            Three steps. Zero restarts.
-          </h2>
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-            {steps.map((s, i) => (
-              <div key={i} className="rounded-2xl border border-white/[0.07] bg-[#0d1526] p-8">
-                <div className="mb-5 flex h-8 w-8 items-center justify-center rounded-full border border-blue-500/30 text-xs font-bold text-blue-500">
-                  {String(i + 1).padStart(2, "0")}
-                </div>
-                <h3 className="mb-2 font-semibold text-white">{s.title}</h3>
-                <p className="text-sm leading-relaxed text-slate-400">{s.desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── Observability ── */}
-      <section className="px-6 py-24">
-        <div className="mx-auto grid max-w-6xl grid-cols-1 items-center gap-16 lg:grid-cols-2">
-          <div>
-            <p className="mb-3 text-[11px] uppercase tracking-[0.15em] text-blue-500">
-              Observability
-            </p>
-            <h2 className="mb-6 text-4xl font-bold leading-tight text-white">
-              See every turn, fallback, and cost in one place.
-            </h2>
-            <p className="mb-8 leading-relaxed text-slate-400">
-              A personal dashboard for the way you actually use AI. Track spend by provider, watch
-              fallbacks happen live, and keep an eye on what&apos;s working — and what isn&apos;t.
-            </p>
-            <SignedIn>
-              <Link
-                href="/dashboard"
-                className="inline-flex items-center gap-2 rounded-lg border border-white/20 px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-white/[0.06]"
-              >
-                View dashboard →
-              </Link>
-            </SignedIn>
-            <SignedOut>
-              <Link
-                href="/sign-up"
-                className="inline-flex items-center gap-2 rounded-lg border border-white/20 px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-white/[0.06]"
-              >
-                View dashboard →
-              </Link>
-            </SignedOut>
-          </div>
-
-          {/* Mock dashboard preview */}
-          <div className="rounded-2xl border border-white/[0.07] bg-[#0d1526] p-6">
-            <div className="mb-4 flex items-center justify-between">
-              <span className="font-semibold text-white">Today</span>
-              <div className="flex items-center gap-1.5 text-xs text-green-400">
-                <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
-                Live
-              </div>
-            </div>
-            <div className="mb-4 grid grid-cols-3 gap-3">
-              <div className="rounded-lg border border-white/[0.07] bg-[#111b30] p-3">
-                <p className="text-[10px] uppercase tracking-wide text-slate-500">Est. Cost</p>
-                <p className="mt-1 text-xl font-bold text-green-400">$1.24</p>
-              </div>
-              <div className="rounded-lg border border-white/[0.07] bg-[#111b30] p-3">
-                <p className="text-[10px] uppercase tracking-wide text-slate-500">Turns</p>
-                <p className="mt-1 text-xl font-bold text-white">147</p>
-              </div>
-              <div className="rounded-lg border border-white/[0.07] bg-[#111b30] p-3">
-                <p className="text-[10px] uppercase tracking-wide text-slate-500">Fallbacks</p>
-                <p className="mt-1 text-xl font-bold text-white">3</p>
-              </div>
-            </div>
-            <div className="rounded-lg border border-white/[0.07] bg-[#111b30] p-4">
-              <div className="mb-3 flex items-center justify-between text-sm">
-                <span className="text-white">Spend by provider</span>
-                <span className="text-xs text-slate-500">This month</span>
-              </div>
-              <div className="flex items-center gap-6">
-                {/* Donut chart */}
-                <svg className="h-20 w-20 shrink-0" viewBox="0 0 100 100">
-                  <circle
-                    cx="50" cy="50" r="35"
-                    fill="none" stroke="#1e2d45" strokeWidth="20"
-                  />
-                  <circle
-                    cx="50" cy="50" r="35"
-                    fill="none" stroke="#3b82f6" strokeWidth="20"
-                    strokeDasharray="114 106" strokeDashoffset="0"
-                    transform="rotate(-90 50 50)"
-                  />
-                  <circle
-                    cx="50" cy="50" r="35"
-                    fill="none" stroke="#8b5cf6" strokeWidth="20"
-                    strokeDasharray="68 152" strokeDashoffset="-114"
-                    transform="rotate(-90 50 50)"
-                  />
-                  <circle
-                    cx="50" cy="50" r="35"
-                    fill="none" stroke="#ef4444" strokeWidth="20"
-                    strokeDasharray="38 182" strokeDashoffset="-182"
-                    transform="rotate(-90 50 50)"
-                  />
-                </svg>
-                <div className="flex flex-col gap-2 text-xs text-slate-300">
-                  <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 shrink-0 rounded-full bg-blue-400" />
-                    <span>Gemini</span>
-                    <span className="ml-3 text-slate-500">52%</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 shrink-0 rounded-full bg-purple-400" />
-                    <span>Mistral</span>
-                    <span className="ml-3 text-slate-500">31%</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 shrink-0 rounded-full bg-red-400" />
-                    <span>Groq</span>
-                    <span className="ml-5 text-slate-500">17%</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
       {/* ── Footer ── */}
-      <footer className="border-t border-white/[0.06] px-6 py-8">
-        <div className="mx-auto flex max-w-7xl items-center justify-between text-xs text-slate-500">
-          <SynqLogo size="text-sm" />
-          <span>Cross-agent AI continuity</span>
+      <footer className="border-t border-paper-line px-6 py-7 text-sm text-ink-dim">
+        <div className="mx-auto flex max-w-[1060px] flex-wrap items-center justify-between gap-2.5">
+          <span>© 2026 SYNQ</span>
+          <span className="flex gap-4">
+            <a href="#" className="hover:text-text-ink">Docs</a>
+            <a href="#" className="hover:text-text-ink">GitHub</a>
+            <a href="#" className="hover:text-text-ink">Status</a>
+          </span>
         </div>
       </footer>
     </div>

@@ -1,21 +1,30 @@
 "use client";
 
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardTitleNote, CardContent } from "@/components/ui/card";
 import type { ProviderHealth } from "@/lib/api";
+import { providerTextClass } from "@/lib/provider-identity";
 
-const DOT_CLASS: Record<ProviderHealth["status"], string> = {
-  healthy: "bg-emerald-500",
-  half_open: "bg-amber-500",
-  degraded: "bg-red-500",
-  unhealthy: "bg-red-500",
-  unknown: "bg-gray-400",
+const STATUS_DOT: Record<ProviderHealth["status"], string> = {
+  healthy: "bg-brand-green shadow-[0_0_0_3px_rgba(63,185,112,0.18)]",
+  half_open: "bg-amber shadow-[0_0_0_3px_rgba(245,166,35,0.18)]",
+  degraded: "bg-red-400 shadow-[0_0_0_3px_rgba(248,113,113,0.18)]",
+  unhealthy: "bg-red-400 shadow-[0_0_0_3px_rgba(248,113,113,0.18)]",
+  unknown: "bg-faint animate-pulse",
 };
 
-function historyDotClass(status: string | null | undefined): string {
-  if (status === "healthy") return "bg-emerald-500";
-  if (status === "half_open") return "bg-amber-500";
-  if (status === "unhealthy" || status === "degraded") return "bg-red-500";
-  return "bg-gray-400";
+const STATUS_LABEL: Record<ProviderHealth["status"], string> = {
+  healthy: "healthy",
+  half_open: "recovering",
+  degraded: "degraded",
+  unhealthy: "unhealthy",
+  unknown: "checking…",
+};
+
+function historyTickClass(status: string | null | undefined): string {
+  if (status === "healthy") return "bg-brand-green";
+  if (status === "half_open") return "bg-amber";
+  if (status === "unhealthy" || status === "degraded") return "bg-red-400";
+  return "bg-faint opacity-40"; // no probe yet — designed "pending" state, not a gray "unknown"
 }
 
 function relativeSince(checkedAt: number | null): string {
@@ -35,16 +44,17 @@ export function ProviderStatus({ providers }: Props) {
   return (
     <Card className="h-full">
       <CardHeader>
-        <CardTitle>Provider status (live, refreshes every 30s)</CardTitle>
+        <CardTitle>
+          Provider status
+          <CardTitleNote>live · refreshes 30s</CardTitleNote>
+        </CardTitle>
       </CardHeader>
       <CardContent>
         {providers.length === 0 && (
-          <p className="text-sm text-slate-500">No providers configured.</p>
+          <p className="font-mono-data text-xs text-faint">No providers configured.</p>
         )}
-        <ul className="space-y-2">
-          {providers.map((p) => {
-            // Newest first from the API; pad with grey dots so every row
-            // always shows exactly 5 slots — easier to spot a pattern.
+        <ul>
+          {providers.map((p, idx) => {
             const history = (p.history ?? []).slice(0, 5);
             const padded = [
               ...history,
@@ -57,34 +67,23 @@ export function ProviderStatus({ providers }: Props) {
             return (
               <li
                 key={p.provider}
-                className="flex items-center justify-between rounded-lg border border-white/[0.07] bg-[#111b30] px-3 py-2"
+                className={`flex items-center gap-3 py-3.5 ${idx < providers.length - 1 ? "border-b border-line" : ""}`}
               >
-                <div className="flex items-center gap-3">
-                  <span className={`inline-block h-3 w-3 rounded-full ${DOT_CLASS[p.status]}`} />
-                  <div>
-                    <div className="text-sm font-medium text-white">{p.provider}</div>
-                    <div className="text-xs text-slate-500">
-                      {p.model_used ?? "—"} · {p.status}
-                    </div>
-                  </div>
-                </div>
-                <div className="flex flex-col items-end gap-1">
-                  <div
-                    className="flex items-center gap-1"
-                    title="Last 5 probe results (newest on the left)"
-                  >
-                    {padded.map((h, i) => (
-                      <span
-                        key={i}
-                        className={`inline-block h-1.5 w-1.5 rounded-full ${historyDotClass(h.status)}`}
-                      />
-                    ))}
-                  </div>
-                  <div className="text-right text-xs text-slate-500">
-                    <span>{p.latency_ms != null ? `${p.latency_ms}ms` : "—"}</span>
-                    <span className="ml-2">{relativeSince(p.checked_at)}</span>
-                  </div>
-                </div>
+                <span className={`h-2 w-2 shrink-0 rounded-full ${STATUS_DOT[p.status]}`} />
+                <span className={`w-[70px] shrink-0 text-[13.5px] font-semibold ${providerTextClass(p.provider)}`}>
+                  {p.provider}
+                </span>
+                <span className="flex-1 truncate font-mono-data text-[11px] text-faint">
+                  {p.model_used ?? "—"} · {STATUS_LABEL[p.status]}
+                </span>
+                <span className="flex items-center gap-[3px]" title="Last 5 probe results (newest on the left)">
+                  {padded.map((h, i) => (
+                    <span key={i} className={`h-3.5 w-1 rounded-sm ${historyTickClass(h.status)}`} />
+                  ))}
+                </span>
+                <span className="w-[92px] shrink-0 text-right font-mono-data text-xs text-dim">
+                  {p.latency_ms != null ? `${p.latency_ms}ms` : relativeSince(p.checked_at)}
+                </span>
               </li>
             );
           })}

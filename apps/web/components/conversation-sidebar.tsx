@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@clerk/nextjs";
 import { useRouter, useParams, usePathname } from "next/navigation";
+import { LayoutDashboard, Plus } from "lucide-react";
 import { useChatStore } from "@/lib/store";
 import {
   createConversation,
@@ -10,8 +11,10 @@ import {
   listConversations,
   updateConversation,
 } from "@/lib/api";
+import { ProviderDot } from "@/components/provider-dot";
+import { providerFromModel } from "@/lib/provider-identity";
 
-export function ConversationSidebar() {
+export function ConversationSidebar({ onNavigate }: { onNavigate?: () => void }) {
   const { getToken, isSignedIn } = useAuth();
   const router = useRouter();
   const params = useParams<{ id?: string }>();
@@ -54,10 +57,15 @@ export function ConversationSidebar() {
     return () => window.removeEventListener("click", close);
   }, [menuId]);
 
+  const goTo = (path: string) => {
+    router.push(path);
+    onNavigate?.();
+  };
+
   const onNew = async () => {
     const c = await createConversation(() => tokenRef.current());
     prependConversation(c);
-    router.push(`/chat/${c.id}`);
+    goTo(`/chat/${c.id}`);
   };
 
   const startRename = (id: string, current: string | null) => {
@@ -98,21 +106,25 @@ export function ConversationSidebar() {
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      <div className="p-3">
-        <button
-          onClick={onNew}
-          className="w-full rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500"
-        >
-          + New chat
-        </button>
+      <button
+        onClick={onNew}
+        className="mx-4 mb-2 mt-3 flex items-center justify-center gap-2 rounded-lg bg-teal px-3.5 py-2 text-[13.5px] font-semibold text-[#07211d] transition-colors hover:bg-teal/85"
+      >
+        <Plus className="h-4 w-4" strokeWidth={2.5} />
+        New chat
+      </button>
+
+      <div className="px-[18px] pb-1.5 pt-2.5 font-mono-data text-[11px] uppercase tracking-[0.1em] text-faint">
+        Conversations
       </div>
 
       <nav className="flex-1 overflow-y-auto px-2 pb-3">
         {conversations.length === 0 ? (
-          <p className="px-2 py-4 text-xs text-slate-500">No conversations yet.</p>
+          <p className="px-3 py-4 font-mono-data text-xs text-faint">No conversations yet.</p>
         ) : (
           conversations.map((c) => {
             const active = !onDashboard && params?.id === c.id;
+            const provider = providerFromModel(c.current_model);
             if (editingId === c.id) {
               return (
                 <input
@@ -125,21 +137,25 @@ export function ConversationSidebar() {
                     if (e.key === "Enter") commitRename(c.id);
                     else if (e.key === "Escape") setEditingId(null);
                   }}
-                  className="mb-1 block w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2 text-sm text-white focus:border-blue-500/50 focus:outline-none"
+                  className="mb-0.5 block w-full rounded-lg border border-line-2 bg-panel px-2.5 py-2 text-sm text-ink focus:border-teal focus:outline-none"
                 />
               );
             }
             return (
               <div key={c.id} className="group relative mb-0.5">
                 <button
-                  onClick={() => router.push(`/chat/${c.id}`)}
-                  className={`block w-full truncate rounded-lg px-3 py-2 pr-9 text-left text-sm transition-colors ${
-                    active
-                      ? "bg-white/[0.08] font-medium text-white"
-                      : "text-slate-400 hover:bg-white/[0.05] hover:text-white"
+                  onClick={() => goTo(`/chat/${c.id}`)}
+                  className={`flex w-full flex-col gap-0.5 rounded-lg px-2.5 py-[9px] pr-9 text-left transition-colors ${
+                    active ? "bg-panel-2" : "hover:bg-panel"
                   }`}
                 >
-                  {c.title ?? "Untitled"}
+                  <span className="truncate text-[13.5px] font-medium text-ink">
+                    {c.title ?? "Untitled"}
+                  </span>
+                  <span className="flex items-center gap-1.5 font-mono-data text-[11px] text-faint">
+                    <ProviderDot provider={provider} />
+                    {provider ?? "no model yet"}
+                  </span>
                 </button>
                 <button
                   aria-label="Conversation options"
@@ -147,7 +163,7 @@ export function ConversationSidebar() {
                     e.stopPropagation();
                     setMenuId(menuId === c.id ? null : c.id);
                   }}
-                  className={`absolute right-1 top-1/2 -translate-y-1/2 rounded px-2 py-1 text-slate-500 hover:bg-white/[0.08] hover:text-white ${
+                  className={`absolute right-1 top-1/2 -translate-y-1/2 rounded px-2 py-1 text-faint hover:bg-panel-2 hover:text-ink ${
                     menuId === c.id ? "opacity-100" : "opacity-0 group-hover:opacity-100"
                   }`}
                 >
@@ -156,11 +172,11 @@ export function ConversationSidebar() {
                 {menuId === c.id && (
                   <div
                     onClick={(e) => e.stopPropagation()}
-                    className="absolute right-1 top-full z-10 mt-1 w-32 overflow-hidden rounded-lg border border-white/[0.08] bg-[#111b30] shadow-xl"
+                    className="absolute right-1 top-full z-10 mt-1 w-32 overflow-hidden rounded-lg border border-line-2 bg-panel-2 shadow-xl"
                   >
                     <button
                       onClick={() => startRename(c.id, c.title)}
-                      className="block w-full px-3 py-2 text-left text-sm text-slate-300 hover:bg-white/[0.06] hover:text-white"
+                      className="block w-full px-3 py-2 text-left text-sm text-dim hover:bg-panel hover:text-ink"
                     >
                       Rename
                     </button>
@@ -176,19 +192,19 @@ export function ConversationSidebar() {
             );
           })
         )}
-        <div className="mt-3 border-t border-white/[0.06] pt-3">
-          <button
-            onClick={() => router.push("/dashboard")}
-            className={`block w-full rounded-lg px-3 py-2 text-left text-sm transition-colors ${
-              onDashboard
-                ? "bg-white/[0.08] font-medium text-white"
-                : "text-slate-400 hover:bg-white/[0.05] hover:text-white"
-            }`}
-          >
-            Dashboard
-          </button>
-        </div>
       </nav>
+
+      <div className="border-t border-line p-2">
+        <button
+          onClick={() => goTo("/dashboard")}
+          className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-[9px] text-left text-[13.5px] font-medium transition-colors ${
+            onDashboard ? "bg-panel-2 text-ink" : "text-dim hover:bg-panel hover:text-ink"
+          }`}
+        >
+          <LayoutDashboard className="h-[15px] w-[15px]" strokeWidth={2} />
+          Dashboard
+        </button>
+      </div>
     </div>
   );
 }
