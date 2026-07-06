@@ -14,6 +14,7 @@ import {
   type RouterChainResponse,
   type StatsToday,
 } from "@/lib/api";
+import { ProviderDot } from "@/components/provider-dot";
 import { StatRow } from "@/components/dashboard/stat-row";
 import { DailyCostChart } from "@/components/dashboard/daily-cost-chart";
 import { ProviderDonut } from "@/components/dashboard/provider-donut";
@@ -96,11 +97,11 @@ export default function DashboardPage() {
   if (!isSignedIn) return null;
 
   return (
-    <div className="mx-auto max-w-7xl space-y-4 px-6 py-6">
-      <header className="flex items-start justify-between">
+    <div className="mx-auto max-w-[1160px] space-y-3.5 px-4 py-6 md:px-7">
+      <header className="flex items-start justify-between gap-5">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-white">Dashboard</h1>
-          <p className="mt-1 text-sm text-slate-400">
+          <h1 className="font-display text-2xl font-semibold tracking-tight text-ink">Dashboard</h1>
+          <p className="mt-1 max-w-[70ch] text-[13.5px] text-dim">
             Personal observability. Costs are estimated from public list prices —
             free-tier providers don&apos;t bill, so this is the &quot;what would I pay on the paid tier&quot; view.
           </p>
@@ -108,41 +109,43 @@ export default function DashboardPage() {
         <button
           onClick={refreshAll}
           disabled={loading}
-          className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
+          className="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg border border-line-2 bg-panel px-4 py-2 text-[13px] font-medium text-ink transition-colors hover:border-teal hover:text-teal disabled:opacity-50"
         >
-          {loading ? "Refreshing…" : "Refresh all"}
+          {loading ? "Refreshing…" : "↻ Refresh"}
         </button>
       </header>
 
       {limits?.soft_warning_active && (
-        <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-4 py-2 text-sm text-amber-300">
+        <div className="rounded-lg border border-amber/20 bg-amber/10 px-4 py-2 font-mono-data text-xs text-amber">
           Soft daily limit exceeded (${limits.today_usd_estimate.toFixed(4)} / ${limits.daily_soft_limit_usd.toFixed(2)}). This is a warning only — requests still go through.
         </div>
       )}
       {limits?.hard_limit_blocked && (
-        <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-2 text-sm text-red-300">
+        <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-2 font-mono-data text-xs text-red-300">
           HARD daily limit reached — chat is blocked until tomorrow or until you raise HARD_DAILY_LIMIT_USD.
         </div>
       )}
       {error && (
-        <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-2 text-sm text-red-300">
+        <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-2 font-mono-data text-xs text-red-300">
           {error}
         </div>
       )}
 
       {chain && (
-        <div className="rounded-lg border border-white/[0.07] bg-[#0d1526] px-4 py-2 text-xs text-slate-300">
-          <span className="font-medium text-white">Fallback chain:</span>{" "}
+        <div className="flex flex-wrap items-center gap-3.5 rounded-[10px] border border-line bg-panel px-4 py-3 font-mono-data text-xs">
+          <span className="text-[10.5px] uppercase tracking-[0.08em] text-faint">Fallback chain</span>
           {chain.chain.map((c, i) => (
-            <span key={i}>
-              <span className="font-mono text-white">{c.model}</span>
-              <span className="text-slate-500"> ({c.provider})</span>
-              {i < chain.chain.length - 1 && <span className="mx-1 text-slate-500">→</span>}
+            <span key={i} className="flex items-center gap-3.5">
+              <span className="flex items-center gap-1.5 rounded-full border border-line-2 bg-bg2 px-3 py-1">
+                <ProviderDot provider={c.provider} />
+                {c.model}
+              </span>
+              {i < chain.chain.length - 1 && <span className="text-faint">→</span>}
             </span>
           ))}
           {chain.cost_aware_routing && (
-            <span className="ml-2 text-slate-500">
-              · cost-aware on (&lt; {chain.cost_aware_prompt_threshold} prompt tokens)
+            <span className="ml-auto rounded-full border border-amber/25 bg-amber/10 px-3 py-1 text-[11px] text-amber">
+              cost-aware on · &lt;{chain.cost_aware_prompt_threshold} prompt tok
             </span>
           )}
         </div>

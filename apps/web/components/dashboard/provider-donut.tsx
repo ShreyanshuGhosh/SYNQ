@@ -1,17 +1,8 @@
 "use client";
 
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardTitleNote, CardContent } from "@/components/ui/card";
 import type { ProviderShareResponse } from "@/lib/api";
-import {
-  Cell,
-  Legend,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-} from "recharts";
-
-const COLORS = ["#2563eb", "#9333ea", "#dc2626", "#16a34a", "#ea580c", "#0891b2"];
+import { providerDotClass } from "@/lib/provider-identity";
 
 interface Props {
   data: ProviderShareResponse | null;
@@ -19,55 +10,61 @@ interface Props {
   selectedProvider: string | null;
 }
 
+/**
+ * Horizontal bars instead of a donut: this app's provider splits are
+ * routinely skewed (97/3/0 is typical for a single fallback chain), and
+ * lopsided slices are unreadable in a pie. Bars keep every share legible
+ * regardless of magnitude.
+ */
 export function ProviderDonut({ data, onSelectProvider, selectedProvider }: Props) {
   const rows = data?.providers ?? [];
+  const totalCost = rows.reduce((s, r) => s + r.cost_usd, 0);
+
   return (
     <Card className="h-full">
       <CardHeader>
-        <CardTitle>Spend by provider (this month)</CardTitle>
+        <CardTitle>
+          Spend by provider
+          <CardTitleNote>this month</CardTitleNote>
+        </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="h-64">
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie
-                data={rows}
-                dataKey="cost_usd"
-                nameKey="provider"
-                innerRadius={50}
-                outerRadius={85}
-                paddingAngle={2}
-                onClick={(slice) => {
-                  if (!slice) return;
-                  const p = (slice as { name?: string }).name ?? null;
-                  onSelectProvider(selectedProvider === p ? null : p);
-                }}
-              >
-                {rows.map((_, i) => (
-                  <Cell key={i} fill={COLORS[i % COLORS.length]} cursor="pointer" />
-                ))}
-              </Pie>
-              <Tooltip
-                formatter={(value: number, name: string, raw) => {
-                  const pct = (raw && (raw as { payload?: { pct?: number } }).payload?.pct) ?? 0;
-                  return [`$${value.toFixed(4)} (${pct}%)`, name];
-                }}
-                contentStyle={{ fontSize: 12 }}
-              />
-              <Legend
-                formatter={(_value, _entry, index) => {
-                  const row = rows[index];
-                  if (!row) return "";
-                  return `${row.provider} · $${row.cost_usd.toFixed(2)} · ${row.pct}%`;
-                }}
-                wrapperStyle={{ fontSize: 11 }}
-              />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
+        {rows.length === 0 ? (
+          <p className="py-8 font-mono-data text-xs text-faint">No spend recorded yet.</p>
+        ) : (
+          <div className="space-y-4 py-1">
+            {rows.map((r) => {
+              const isSelected = selectedProvider === r.provider;
+              const barPct = Math.max(r.pct, r.pct > 0 ? 2 : 0);
+              return (
+                <button
+                  key={r.provider}
+                  onClick={() => onSelectProvider(isSelected ? null : r.provider)}
+                  className={`flex w-full items-center gap-3 rounded-md px-1 py-0.5 text-left transition-colors ${
+                    isSelected ? "bg-panel-2" : "hover:bg-panel-2/60"
+                  }`}
+                >
+                  <span className="w-16 shrink-0 font-mono-data text-xs text-ink">{r.provider}</span>
+                  <span className="h-3.5 flex-1 overflow-hidden rounded bg-line">
+                    <span
+                      className={`block h-full rounded ${providerDotClass(r.provider)}`}
+                      style={{ width: `${barPct}%` }}
+                    />
+                  </span>
+                  <span className="w-14 shrink-0 text-right font-mono-data text-xs text-ink">
+                    {r.pct.toFixed(1)}%
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+        <p className="mt-2 font-mono-data text-[11px] text-faint">
+          total ${totalCost.toFixed(2)} · free-tier providers show cost at list price
+        </p>
         {selectedProvider && (
-          <p className="mt-1 text-[11px] text-slate-500">
-            Filtering Panel B by {selectedProvider} — click slice again to clear.
+          <p className="mt-1 font-mono-data text-[11px] text-faint">
+            Filtering daily cost by {selectedProvider} — click again to clear.
           </p>
         )}
       </CardContent>
