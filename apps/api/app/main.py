@@ -31,6 +31,12 @@ app.add_middleware(RequestContextMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
+    # Every Vercel branch/PR preview gets its own generated hostname
+    # (synq-web-git-<branch>-<team>.vercel.app, synq-web-<hash>-<team>.vercel.app,
+    # etc.) that can't be enumerated in CORS_ORIGINS ahead of time. Scoping the
+    # regex to hosts starting with "synq-web-" keeps this to our own project's
+    # deployments rather than opening CORS to all of vercel.app.
+    allow_origin_regex=r"https://synq-web-[a-zA-Z0-9-]+\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
