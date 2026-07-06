@@ -32,11 +32,17 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
     # Every Vercel branch/PR preview gets its own generated hostname
-    # (synq-web-git-<branch>-<team>.vercel.app, synq-web-<hash>-<team>.vercel.app,
-    # etc.) that can't be enumerated in CORS_ORIGINS ahead of time. Scoping the
-    # regex to hosts starting with "synq-web-" keeps this to our own project's
-    # deployments rather than opening CORS to all of vercel.app.
-    allow_origin_regex=r"https://synq-web-[a-zA-Z0-9-]+\.vercel\.app",
+    # (e.g. synq-m1mxy9rq7-shreyanshu-ghoshs-projects.vercel.app) that can't
+    # be enumerated in CORS_ORIGINS ahead of time — and the project-name
+    # prefix isn't stable enough to match on (observed "synq-<hash>-...",
+    # not "synq-web-..."). Every preview under this Vercel team DOES share
+    # the team slug suffix, so anchor on that instead: unique to us, and
+    # not guessable/creatable by anyone outside this Vercel account.
+    # Starlette matches this with re.match (start-anchored only, NOT
+    # fullmatch) — the trailing $ is required, otherwise
+    # "https://x-shreyanshu-ghoshs-projects.vercel.app.evil.com" would
+    # also match as a same-prefix string.
+    allow_origin_regex=r"https://[a-zA-Z0-9-]+-shreyanshu-ghoshs-projects\.vercel\.app$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
