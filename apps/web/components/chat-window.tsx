@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@clerk/nextjs";
-import { Paperclip } from "lucide-react";
+import { ChevronDown, Paperclip } from "lucide-react";
 import type {
   ContentBlock,
   FileStatusResponse,
@@ -353,7 +353,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
           <select
             value={activeModel}
             onChange={(e) => onModelChange(e.target.value)}
-            className="appearance-none bg-transparent font-mono-data text-xs text-ink outline-none disabled:opacity-50"
+            className="appearance-none bg-transparent pr-4 font-mono-data text-xs text-ink outline-none disabled:opacity-50"
             disabled={streamingState !== "idle" || models.length === 0}
             aria-label="Active model"
           >
@@ -367,6 +367,10 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
               ))
             )}
           </select>
+          <ChevronDown
+            className="pointer-events-none absolute right-2.5 h-3.5 w-3.5 text-faint"
+            strokeWidth={2}
+          />
         </div>
       </header>
 
