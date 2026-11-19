@@ -1,313 +1,159 @@
 # SYNQ
 
-Cross-agent conversation continuity SaaS. Users continue conversations across AI providers (Claude, GPT, Gemini) when they hit rate limits, want to switch models, or need different capabilities.
+**Cross-model conversation continuity.** Start a chat with one LLM, hit a rate limit or want a different model, and continue the same conversation on another provider without losing context.
 
-**Current status: Phase 3 (Multimodal) — adds file uploads to S3/MinIO, an async Celery parse pipeline (PDFs, DOCX, images with OCR + Groq vision descriptions, TXT/MD), per-provider `resolve_file` with vision capability flags, Gemini Files API with Redis URI caching, and a chat UI that supports drag-drop / paste / chip-row attachments. Phase 1 and Phase 2 deliverables remain in place.**
+**Live demo:** https://synq-web-snowy.vercel.app
+
+![SYNQ architecture](final_master_architecture.jpg)
+
+Soft-launched to 17 beta testers; their feedback drove a full UI redesign.
+<!-- CONFIRM: "17 beta testers" and the redesign are taken from your resume -->
 
 ---
+
+## The problem
+
+Switching LLM providers mid-conversation normally means starting over. Each provider has a different context window, message format, tokenizer and file support, so long chats, uploaded files and earlier decisions get lost.
+
+## How SYNQ solves it
+
+1. **Canonical storage.** Every message is stored once as provider-neutral JSONB content blocks in PostgreSQL (never as a plain string). Provider adapters translate to and from each vendor's format.
+2. **Context engine.** For each request, the engine builds a prompt that fits the target model's context window from extracted facts, a rolling summary, Qdrant-retrieved chunks and the most recent turns. <!-- CONFIRM: facts, rolling summary and Qdrant retrieval are all merged and working in the code; README previously listed them as Phase 4 -->
+3. **Multimodal continuity.** Files are parsed asynchronously (PDF, DOCX, TXT/MD, and images via OCR plus vision descriptions). A vision-capable model receives the original bytes; a text-only model receives the stored description, so it still knows what was in the file.
+4. **Resilience.** Requests go through a provider router with Redis-backed circuit breakers and fallback to another provider when one fails or is rate limited. <!-- CONFIRM: Phase 5 router and circuit breaker are in the code -->
+
+## Features
+
+- Streaming chat over SSE, with history restored from PostgreSQL on refresh
+- Multi-provider support (Gemini, Groq, Mistral) behind a `ProviderAdapter` interface and LiteLLM, with a per-message model picker <!-- CONFIRM: provider list; the earlier README mentioned Claude, GPT and Gemini -->
+- Per-provider token counting with caching
+- Idempotent message writes (replaying the same `idempotency_key` returns the original turn)
+- Versioned conversations (`conversations.version` increments after each assistant reply)
+- File uploads to S3-compatible storage (MinIO locally), with a Celery parse pipeline and per-provider `resolve_file` using vision capability flags
+- Gemini Files API integration with Redis URI caching
+- Chat UI with drag-and-drop, paste and chip-row attachments
+- Clerk authentication with FastAPI JWT verification
+
+## Reliability and testing
+
+- **Chaos test:** synthetic `429` errors are injected to verify provider failover. See [CHAOS_TEST.md](CHAOS_TEST.md). <!-- CONFIRM: file describes the 429 test and its result -->
+- CI runs lint and type checks (`ruff`, `mypy`, `eslint`, `tsc`).
+
+## Tech stack
+
+| Layer | Choice |
+|---|---|
+| Frontend | Next.js 14 (App Router), TypeScript, Tailwind, Zustand, shadcn/ui |
+| Backend | FastAPI (Python 3.12), managed with `uv` |
+| Auth | Clerk |
+| Database | PostgreSQL 16, Alembic migrations |
+| Cache and queue | Redis 7 (two instances: cache and queue) |
+| Vector store | Qdrant |
+| Workers | Celery |
+| File storage | S3-compatible (MinIO locally) |
+| LLM layer | LiteLLM plus custom provider adapters |
+| Infra | Docker Compose, Render (API), Vercel (web) <!-- CONFIRM: hosting --> |
 
 ## Repository layout
 
 ```
 synq/
 ├── apps/
-│   ├── web/              # Next.js 14 · App Router · TypeScript · Tailwind · Zustand · shadcn/ui
-│   └── api/              # FastAPI · Python 3.12 · uv
+│   ├── web/              # Next.js 14, TypeScript, Tailwind, Zustand, shadcn/ui
+│   └── api/              # FastAPI, Python 3.12, uv
 ├── packages/
-│   └── shared-types/     # TypeScript types mirroring Pydantic models (no code-gen yet)
-├── docker-compose.yml    # Postgres 16 · Redis 7 (×2) · MinIO
-├── .github/workflows/    # CI: lint + typecheck only
-└── .pre-commit-config.yaml
+│   └── shared-types/     # TypeScript types mirroring Pydantic models
+├── scripts/
+├── docker-compose.yml    # Postgres 16, Redis 7 (x2), MinIO
+├── .github/workflows/    # CI: lint and typecheck
+├── ARCHITECTURE.pdf
+├── CHAOS_TEST.md
+└── DEPLOY.md
 ```
-
----
-
-## Prerequisites
-
-| Tool | Version | Install |
-|------|---------|---------|
-| Node.js | ≥ 22 | https://nodejs.org |
-| Python | ≥ 3.12 | https://python.org |
-| uv | latest | `curl -LsSf https://astral.sh/uv/install.sh \| sh` (Mac/Linux) · [Windows](https://docs.astral.sh/uv/getting-started/installation/) |
-| Docker Desktop | latest | https://docker.com |
-| pre-commit (optional) | latest | `pip install pre-commit` |
-
----
 
 ## Local setup
 
-### 1 — Clone and copy env files
+**Prerequisites:** Node.js 22+, Python 3.12+, [uv](https://docs.astral.sh/uv/), Docker Desktop.
 
 ```bash
-git clone <repo-url> synq && cd synq
+git clone https://github.com/ShreyanshuGhosh/SYNQ.git synq && cd synq
 cp .env.example .env
 cp apps/api/.env.example apps/api/.env
 cp apps/web/.env.example apps/web/.env.local
-```
 
-### 2 — Start infrastructure
+docker compose up -d              # Postgres, Redis x2, MinIO
 
-```bash
-docker compose up -d
-```
+npm install                       # web app and shared packages
 
-Services started:
-| Service | URL |
-|---------|-----|
-| Postgres 16 | `localhost:5432` |
-| Redis (cache) | `localhost:6379` |
-| Redis (queue) | `localhost:6380` |
-| MinIO S3 API | `localhost:9000` |
-| MinIO console | `localhost:9001` (user: `synq_minio` / pass: `synq_minio_password`) |
-
-### 3 — Install JS dependencies
-
-```bash
-npm install   # from repo root — installs apps/web + packages/*
-```
-
-### 4 — Install Python dependencies
-
-```bash
 cd apps/api
-uv sync       # creates .venv, installs runtime + dev deps
+uv sync
+uv run alembic upgrade head       # apply migrations
 cd ../..
 ```
 
-### 5 — Apply database migrations
+**Configure keys:**
+
+- **Clerk:** create an app at https://dashboard.clerk.com. Put the publishable and secret keys in `apps/web/.env.local`, and `CLERK_JWKS_URL` and `CLERK_ISSUER` in `apps/api/.env`.
+- **Gemini:** a free-tier key from https://aistudio.google.com/apikey goes in `GEMINI_API_KEY`. `DEFAULT_MODEL` defaults to `gemini-2.5-flash`.
+- Add keys for any other providers you enable (Groq, Mistral) in `apps/api/.env`. <!-- CONFIRM: env variable names -->
+
+**Run:**
 
 ```bash
-cd apps/api
-uv run alembic upgrade head
-cd ../..
-```
+# API (from apps/api)
+uv run uvicorn app.main:app --reload --port 8000      # http://localhost:8000/docs
 
-### 6 — Configure Clerk and Gemini
-
-Fill in `apps/web/.env.local` and `apps/api/.env`:
-
-- **Clerk** — create an application at https://dashboard.clerk.com, then copy
-  the publishable + secret keys to `apps/web/.env.local`, and the JWKS URL +
-  Frontend API URL to `apps/api/.env` (`CLERK_JWKS_URL`, `CLERK_ISSUER`).
-- **Clerk webhook (optional locally)** — create an endpoint pointed at
-  `http(s)://<your-api-host>/webhooks/clerk` listening for `user.created`
-  and `user.deleted`, then paste the Signing Secret into
-  `CLERK_WEBHOOK_SECRET`. The auth dependency also lazy-creates user rows on
-  first request, so you can defer this until you deploy.
-- **Gemini** — grab a free-tier key at https://aistudio.google.com/apikey
-  and paste it into `GEMINI_API_KEY` in `apps/api/.env`. `DEFAULT_MODEL`
-  defaults to `gemini-2.5-flash`; flip to a Claude model once you have
-  Anthropic credits (Phase 2 wires the model picker so per-message
-  overrides work too).
-
-### 7 — (Optional) Set up pre-commit hooks
-
-```bash
-pre-commit install
-```
-
----
-
-## Running locally
-
-**API** (from `apps/api/`):
-```bash
-uv run uvicorn app.main:app --reload --port 8000
-# → http://localhost:8000/health
-# → http://localhost:8000/docs  (Swagger UI)
-```
-
-**Celery worker** (Phase 3 — separate terminal, from `apps/api/`):
-```bash
+# Celery worker (from apps/api, separate terminal)
 uv run celery -A app.workers.celery_app worker --loglevel=info
+
+# Web (from repo root)
+npm run dev:web                                        # http://localhost:3000
 ```
 
-**Celery beat** (optional today; wired for Phase 4 scheduled jobs):
-```bash
-uv run celery -A app.workers.celery_app beat --loglevel=info
-```
+Image OCR needs [Tesseract](https://github.com/UB-Mannheim/tesseract/wiki) (`brew install tesseract` or `sudo apt install tesseract-ocr`). It is best effort: without it, the vision-model description still populates `files.description`.
 
-**Tesseract OCR** (Phase 3 image pipeline) — install once:
-- Windows: download from <https://github.com/UB-Mannheim/tesseract/wiki> and add `tesseract.exe` to PATH.
-- macOS: `brew install tesseract`
-- Linux: `sudo apt install tesseract-ocr`
+## Quick verification
 
-OCR is best-effort: if tesseract isn't available, the vision-model description from Groq still populates `files.description` and a text-only target reads from there.
-
-**Web** (from repo root):
-```bash
-npm run dev:web
-# → http://localhost:3000
-```
-
-### Smoke-testing Phase 1 end-to-end
-
-1. Bring up infra: `docker compose up -d`
-2. Apply migrations: `cd apps/api && uv run alembic upgrade head`
-3. Start the API: `uv run uvicorn app.main:app --reload --port 8000`
-4. Start the web app (separate terminal, from repo root): `npm run dev:web`
-5. Open http://localhost:3000, click **Sign up**, complete Clerk onboarding.
-6. You'll be redirected to `/chat`. Click **+ New chat**, type a message, hit
-   **Send**. Tokens should stream into the assistant bubble.
-7. Refresh the page — history must reload from Postgres.
-
-Verifying canonical storage:
+1. Sign up at http://localhost:3000 and start a new chat; tokens stream into the reply.
+2. Refresh the page; history reloads from Postgres.
+3. Check canonical storage:
 
 ```bash
 docker compose exec postgres psql -U synq -d synq_dev -c \
   "SELECT id, role, content, model_used, token_counts FROM messages ORDER BY created_at DESC LIMIT 4;"
 ```
 
-Expectations:
-- `content` is a JSONB array of `{"type":"text","text":"..."}` blocks (never a plain string).
-- `model_used` is the exact pinned model id (e.g. `gemini-2.5-flash`).
-- `token_counts` is `{"gemini": <int>}`.
-- `conversations.version` increments after each assistant reply.
+`content` is a JSONB array of blocks, and `model_used` is the exact pinned model id.
 
-Idempotency check (curl, replace `<JWT>` with a Clerk session token):
+4. Idempotency check (the second call replays the first, no new turn):
 
 ```bash
-# Same idempotency_key twice → second call replays the original, no new turn.
 curl -N -X POST http://localhost:8000/conversations/<conv-id>/messages \
-  -H "Authorization: Bearer <JWT>" \
-  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <JWT>" -H "Content-Type: application/json" \
   -d '{"content":[{"type":"text","text":"hi"}],"idempotency_key":"abc-123"}'
 ```
-
----
 
 ## Useful commands
 
 | Command | What it does |
-|---------|-------------|
-| `npm run lint` | ESLint on apps/web |
-| `npm run typecheck` | tsc --noEmit on apps/web + shared-types |
-| `npm run format` | Prettier across all TS/JSON/MD files |
+|---|---|
+| `npm run lint` / `npm run typecheck` | ESLint and tsc on the web app and shared types |
 | `cd apps/api && uv run ruff check .` | Lint Python |
-| `cd apps/api && uv run ruff format .` | Format Python |
 | `cd apps/api && uv run mypy app/` | Type-check Python |
 | `cd apps/api && uv run pytest` | Run API tests |
 | `docker compose down -v` | Stop infra and wipe volumes |
 
----
+## Status
 
-## Adding shadcn/ui components
+- [x] **Phase 1 - Foundation:** Clerk auth, Postgres schema with indexes and `version` column, conversation REST API, SSE streaming
+- [x] **Phase 2 - Multi-provider:** `ProviderAdapter`, token counting, model picker, truncation
+- [x] **Phase 3 - Multimodal:** S3 uploads, Celery parse and OCR pipeline, vision descriptions, Gemini Files API with Redis caching
+- [x] **Phase 4 - Intelligence:** Qdrant embedder, rolling summaries, fact extraction, RAG retriever <!-- CONFIRM: all four are working -->
+- [x] **Phase 5 - Resilience:** provider router with fallback chains, Redis-backed circuit breakers, chaos test <!-- CONFIRM -->
+- [ ] **Planned:** cost metering (ClickHouse) with per-user spend limits, OpenTelemetry tracing, Sentry, usage-based billing, long-conversation (300+ turn) test fixtures, conversation forking, MCP tool integration
 
-After running `npm install`:
-```bash
-cd apps/web
-npx shadcn@latest add button
-npx shadcn@latest add input
-# etc.
-```
+## Docs
 
-Components land in `apps/web/components/ui/`.
-
----
-
-## Build sequence (six phases)
-
-Each phase is independently shippable. Do not skip ahead.
-
-### Phase 1 — Foundation (weeks 1–2)
-**Deliverables**
-- Clerk auth with FastAPI middleware
-- Postgres schema with indexes and `version` column
-- Conversation service REST endpoints
-- LiteLLM wired for Anthropic only
-- Next.js client with Zustand and SSE streaming
-
-**Definition of done:** Logged-in user can have a multi-turn streaming chat with Claude. Page refresh restores history.
-
----
-
-### Phase 2 — Multi-provider (weeks 3–4)
-**Deliverables**
-- `ProviderAdapter` protocol defined
-- OpenAI and Gemini adapters via LiteLLM
-- Per-provider token counting with caching
-- Model picker UI
-- Naïve truncation (drop oldest) when over context
-
-**Definition of done:** User can switch from Claude to Gemini mid-conversation on threads under 50 turns and it works.
-
----
-
-### Phase 3 — Multimodal (weeks 5–6)
-**Deliverables**
-- File upload to S3 / R2
-- Celery worker for parse + OCR + vision description
-- `files` table with `extracted_text` and `description` columns
-- Adapter logic: vision target gets bytes, text target gets description
-- PDF chunking with stored chunk metadata
-
-**Definition of done:** User uploads an image to a Claude conversation, switches to a text-only provider, and the new model knows what was in the image.
-
----
-
-### Phase 4 — Intelligence (weeks 7–9) — _the differentiator_
-**Deliverables**
-- Embedder worker writing to Qdrant
-- Rolling-summary worker (Haiku-powered, runs every 10 turns)
-- Fact-extraction worker
-- RAG retriever in context engine
-- Six-part compression assembly wired into context engine
-- Test fixtures with 300+ turn conversations
-
-**Definition of done:** Long conversations with images, documents, and many turns switch providers without the new model losing context.
-
----
-
-### Phase 5 — Resilience (weeks 10–11)
-**Deliverables**
-- Provider router with per-user fallback chains
-- Redis-backed circuit breakers
-- Cost-meter Celery worker writing to ClickHouse
-- Admin dashboard for spend by user/provider/feature
-- Per-user daily cost ceilings at gateway
-
-**Definition of done:** Killing Anthropic in a fire drill auto-continues conversations on Gemini. One user cannot bankrupt you.
-
----
-
-### Phase 6 — Productionalize (weeks 12–14)
-**Deliverables**
-- OpenTelemetry instrumentation across all services
-- Sentry for unhandled exceptions
-- Stripe usage-based billing tied to ClickHouse events
-- PostHog feature flags with prompt A/B test infrastructure
-- Audit log table and access middleware
-- Security review and SOC2 evidence collection started
-
-**Definition of done:** Launch-ready.
-
----
-
-### Post-launch
-- Conversation forking (copy-on-write at DB level)
-- Multi-device sync with WebSocket presence
-- MCP tool integration
-- BYOK for enterprise
-- Fine-tuned routing models
-
----
-
-## Tech stack
-
-| Layer | Choice |
-|-------|--------|
-| Edge | Cloudflare |
-| Frontend | Next.js 14, Zustand, TailwindCSS, shadcn/ui |
-| Auth | Clerk (Phase 1) |
-| Backend | FastAPI (Python 3.12) |
-| LLM SDK | LiteLLM + custom adapters |
-| Database | Postgres 16 (Supabase / Neon / RDS) |
-| Cache & queue | Redis 7 — two instances |
-| Vector DB | Qdrant |
-| Object storage | Cloudflare R2 / AWS S3 |
-| Analytics DB | ClickHouse |
-| Async workers | Temporal (durable) + Celery (one-shot) |
-| Telemetry | OpenTelemetry + Grafana + Sentry |
-| Billing | Stripe |
-| Feature flags | PostHog |
-| Deployment | Kubernetes or Render / Railway |
+- [Architecture](ARCHITECTURE.pdf)
+- [Chaos test](CHAOS_TEST.md)
+- [Deployment](DEPLOY.md)
