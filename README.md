@@ -2,7 +2,7 @@
 
 **Cross-model conversation continuity.** Start a chat with one LLM, hit a rate limit or want a different model, and continue the same conversation on another provider without losing context.
 
-**Live demo:** https://synq-web-snowy.vercel.app
+**Live demo:** https://keepinsynq.vercel.app/
 
 ![SYNQ architecture](final_master_architecture.jpg)
 
